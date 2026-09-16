@@ -3,15 +3,42 @@ import { ref, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Pagination from '@/Components/Pagination.vue'; 
+import ConfirmModal from '@/Components/ConfirmModal.vue'; // <-- Import komponen modal kita
 
 const props = defineProps({ categories: Object, filters: Object });
 
-// Menampung state filter dari URL
+// === STATE MODAL KUSTOM ===
+const showModal = ref(false);
+const modalTitle = ref('');
+const modalMessage = ref('');
+let resolveModal = null;
+
+// Fungsi pemanggil modal dinamis berbasis Promise (Khusus konfirmasi)
+const customConfirm = (title, message) => {
+    modalTitle.value = title;
+    modalMessage.value = message;
+    showModal.value = true;
+    
+    return new Promise((resolve) => {
+        resolveModal = resolve;
+    });
+};
+
+const handleModalConfirm = (value) => {
+    showModal.value = false;
+    if (resolveModal) resolveModal(true); // Kirim true jika OK
+};
+
+const handleModalClose = () => {
+    showModal.value = false;
+    if (resolveModal) resolveModal(false); // Kirim false jika Batal
+};
+
+// === STATE UTAMA ===
 const search = ref(props.filters?.search || '');
 const sortField = ref(props.filters?.sort || 'id');
 const sortDirection = ref(props.filters?.direction || 'desc');
 
-// Fungsi ambil data (Search & Sort) ke Backend
 const fetchData = () => {
     router.get(route('categories.index'), {
         search: search.value,
@@ -20,14 +47,12 @@ const fetchData = () => {
     }, { preserveState: true, preserveScroll: true, replace: true });
 };
 
-// Jeda pencarian otomatis saat mengetik (Debounce 300ms)
 let searchTimeout;
 watch(search, () => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => { fetchData(); }, 300);
 });
 
-// Fungsi klik Header Tabel untuk Sorting
 const sortBy = (field) => {
     if (sortField.value === field) {
         sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
@@ -38,8 +63,15 @@ const sortBy = (field) => {
     fetchData();
 };
 
-const deleteCategory = (id) => {
-    if (confirm('Yakin ingin menghapus kategori ini? Pastikan tidak ada produk yang masih menggunakan kategori ini.')) {
+// === FUNGSI HAPUS (Diubah menjadi Async) ===
+const deleteCategory = async (id) => {
+    // Panggil modal kustom pengganti window.confirm
+    const confirmed = await customConfirm(
+        'Konfirmasi Hapus',
+        'Yakin ingin menghapus kategori ini? Pastikan tidak ada produk yang masih menggunakan kategori ini.'
+    );
+
+    if (confirmed) {
         router.delete(route('categories.destroy', id));
     }
 };
@@ -100,5 +132,16 @@ const deleteCategory = (id) => {
 
             </div>
         </div>
+
+        <!-- MODAL KUSTOM DILETAKKAN DI SINI -->
+        <ConfirmModal 
+            :show="showModal" 
+            :title="modalTitle"
+            :message="modalMessage" 
+            :isPrompt="false"
+            @confirm="handleModalConfirm" 
+            @close="handleModalClose" 
+        />
+        
     </AuthenticatedLayout>
 </template>

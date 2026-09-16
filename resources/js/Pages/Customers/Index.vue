@@ -3,9 +3,38 @@ import { ref, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Pagination from '@/Components/Pagination.vue'; 
+import ConfirmModal from '@/Components/ConfirmModal.vue'; // <-- Import komponen modal
 
 const props = defineProps({ customers: Object, filters: Object });
 
+// === STATE MODAL KUSTOM ===
+const showModal = ref(false);
+const modalTitle = ref('');
+const modalMessage = ref('');
+let resolveModal = null;
+
+// Fungsi pemanggil modal dinamis berbasis Promise (Khusus konfirmasi)
+const customConfirm = (title, message) => {
+    modalTitle.value = title;
+    modalMessage.value = message;
+    showModal.value = true;
+    
+    return new Promise((resolve) => {
+        resolveModal = resolve;
+    });
+};
+
+const handleModalConfirm = () => {
+    showModal.value = false;
+    if (resolveModal) resolveModal(true); // Kirim true jika OK
+};
+
+const handleModalClose = () => {
+    showModal.value = false;
+    if (resolveModal) resolveModal(false); // Kirim false jika Batal
+};
+
+// === STATE UTAMA ===
 // Menampung state filter dari URL
 const search = ref(props.filters?.search || '');
 const sortField = ref(props.filters?.sort || 'id');
@@ -38,8 +67,15 @@ const sortBy = (field) => {
     fetchData();
 };
 
-const deleteCustomer = (id) => {
-    if (confirm('Yakin ingin menghapus pelanggan ini?')) {
+// === FUNGSI HAPUS (Diubah menjadi Async) ===
+const deleteCustomer = async (id) => {
+    // Panggil modal kustom pengganti window.confirm
+    const confirmed = await customConfirm(
+        'Konfirmasi Hapus',
+        'Yakin ingin menghapus pelanggan ini?'
+    );
+
+    if (confirmed) {
         router.delete(route('customers.destroy', id));
     }
 };
@@ -108,5 +144,16 @@ const deleteCustomer = (id) => {
 
             </div>
         </div>
+
+        <!-- MODAL KUSTOM DILETAKKAN DI SINI -->
+        <ConfirmModal 
+            :show="showModal" 
+            :title="modalTitle"
+            :message="modalMessage" 
+            :isPrompt="false"
+            @confirm="handleModalConfirm" 
+            @close="handleModalClose" 
+        />
+        
     </AuthenticatedLayout>
 </template>

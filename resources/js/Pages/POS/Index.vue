@@ -3,13 +3,46 @@ import { ref, computed, watch } from 'vue';
 import { Head, router, Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue'; // Import komponen modal kita
 
 // Props dari Controller
 const props = defineProps({
     products: Array
 });
 
-// State
+// === STATE MODAL KUSTOM ===
+const showModal = ref(false);
+const modalTitle = ref('');
+const modalMessage = ref('');
+const isPromptMode = ref(false);
+const modalPlaceholder = ref('');
+let resolveModal = null;
+
+// Fungsi pemanggil modal dinamis berbasis Promise
+const customDialog = ({ title = 'Peringatan', message = '', isPrompt = false, placeholder = '' }) => {
+    modalTitle.value = title;
+    modalMessage.value = message;
+    isPromptMode.value = isPrompt;
+    modalPlaceholder.value = placeholder;
+    showModal.value = true;
+    
+    return new Promise((resolve) => {
+        resolveModal = resolve;
+    });
+};
+
+const handleModalConfirm = (value) => {
+    showModal.value = false;
+    if (resolveModal) resolveModal(value);
+};
+
+const handleModalClose = () => {
+    showModal.value = false;
+    if (resolveModal) resolveModal(null);
+};
+
+
+// === STATE UTAMA ===
 const searchQuery = ref('');
 const cart = ref([]);
 const heldCarts = ref(JSON.parse(localStorage.getItem('pos_held_carts')) || []);
@@ -41,7 +74,7 @@ const formatRp = (value) => {
 const addToCart = (product) => {
     const existingItem = cart.value.find(item => item.product_id === product.id);
     if (existingItem) {
-        existingItem.qty += 1; // Default tambah 1
+        existingItem.qty += 1;
     } else {
         cart.value.push({
             product_id: product.id,
@@ -58,12 +91,23 @@ const removeFromCart = (index) => {
     cart.value.splice(index, 1);
 };
 
-// Fungsi Menahan (Hold) Keranjang
-const holdCart = () => {
-    if (cart.value.length === 0) return alert('Keranjang masih kosong, tidak ada yang bisa di-hold.');
+// Fungsi Menahan (Hold) Keranjang (Diubah menjadi Async)
+const holdCart = async () => {
+    if (cart.value.length === 0) {
+        await customDialog({ title: 'Info', message: 'Keranjang masih kosong, tidak ada yang bisa di-hold.' });
+        return;
+    }
     
-    const refName = prompt('Masukkan referensi (Contoh: Ibu Budi / Ambil dompet):');
-    if (!refName) return; // Batal jika input nama kosong
+    // Panggil modal pengganti prompt
+    const refName = await customDialog({
+        title: 'Input Referensi',
+        message: 'Masukkan referensi (Contoh: Ibu Budi / Ambil dompet):',
+        isPrompt: true,
+        placeholder: 'Nama referensi...'
+    });
+
+    // Batal jika input kosong atau menekan tombol batal (mengembalikan null)
+    if (!refName || refName === true) return; 
 
     // Simpan keranjang saat ini ke dalam daftar hold
     heldCarts.value.push({
@@ -73,13 +117,19 @@ const holdCart = () => {
         items: [...cart.value]
     });
     
-    cart.value = []; // Kosongkan keranjang utama agar bisa melayani antrean berikutnya
+    cart.value = []; // Kosongkan keranjang utama
 };
 
-// Fungsi Melanjutkan (Restore) Keranjang
-const restoreHeldCart = (index) => {
+// Fungsi Melanjutkan (Restore) Keranjang (Diubah menjadi Async)
+const restoreHeldCart = async (index) => {
     if (cart.value.length > 0) {
-        if (!confirm('Peringatan: Keranjang kasir saat ini tidak kosong! Yakin ingin menimpanya? (Gunakan Hold lagi jika ingin menahan keranjang ini)')) return;
+        // Panggil modal pengganti confirm
+        const confirmed = await customDialog({
+            title: 'Konfirmasi Timpa Keranjang',
+            message: 'Peringatan: Keranjang kasir saat ini tidak kosong! Yakin ingin menimpanya? (Gunakan Hold lagi jika ingin menahan keranjang ini)'
+        });
+        
+        if (!confirmed) return; // Jika klik batal
     }
     
     // Kembalikan isi keranjang dan hapus dari antrean hold
@@ -87,39 +137,42 @@ const restoreHeldCart = (index) => {
     heldCarts.value.splice(index, 1);
 };
 
-// Fungsi Menghapus Keranjang Hold
-const removeHeldCart = (index) => {
-    if (confirm('Hapus transaksi tertahan ini secara permanen?')) {
+// Fungsi Menghapus Keranjang Hold (Diubah menjadi Async)
+const removeHeldCart = async (index) => {
+    const confirmed = await customDialog({
+        title: 'Hapus Transaksi Tertahan',
+        message: 'Yakin ingin menghapus transaksi tertahan ini secara permanen?'
+    });
+    
+    if (confirmed) {
         heldCarts.value.splice(index, 1);
     }
 };
 
-// Fungsi: Checkout (Kirim data ke backend)
-const submitCheckout = () => {
-    if (cart.value.length === 0) return alert('Keranjang masih kosong!');
+// Fungsi: Checkout (Diubah menjadi Async)
+const submitCheckout = async () => {
+    if (cart.value.length === 0) {
+        await customDialog({ title: 'Info', message: 'Keranjang masih kosong!' });
+        return;
+    }
     
-    // Menggunakan Axios agar bisa menangani JSON dan membuka tab baru
     axios.post(route('pos.store'), {
         items: cart.value,
         payment_method: 'Cash'
     })
     .then(response => {
-        // 1. Buka URL struk di tab baru (akan otomatis nge-print)
         window.open(response.data.print_url, '_blank');
-        
-        // 2. Kosongkan keranjang
         cart.value = [];
-        
-        // 3. Refresh daftar stok produk di background menggunakan router Inertia
         router.reload({ only: ['products'] });
     })
-    .catch(error => {
+    .catch(async (error) => {
         console.error(error);
         let errorMsg = 'Gagal memproses transaksi. Cek stok atau koneksi.';
         if (error.response && error.response.data.message) {
             errorMsg = error.response.data.message;
         }
-        alert(errorMsg);
+        // Ganti alert bawaan saat error dengan modal kustom
+        await customDialog({ title: 'Transaksi Gagal', message: errorMsg });
     });
 };
 </script>
@@ -132,7 +185,7 @@ const submitCheckout = () => {
             <div class="flex justify-between items-center">
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">Mesin Kasir</h2>
                 <Link :href="route('pos.history')" class="bg-indigo-600 text-white px-4 py-2 rounded-md font-bold shadow-sm hover:bg-indigo-700 transition text-sm">
-                    Lihat Riwayat & Cetak Ulang Struk
+                    Liat Riwayat & Cetak Ulang Struk
                 </Link>
             </div>
         </template>
@@ -149,7 +202,6 @@ const submitCheckout = () => {
                     />
                     
                     <div class="overflow-y-auto grid grid-cols-2 lg:grid-cols-3 gap-4">
-                        <!-- Card Produk -->
                         <div 
                             v-for="product in filteredProducts" 
                             :key="product.id"
@@ -180,7 +232,6 @@ const submitCheckout = () => {
                                 </div>
                                 <div class="flex justify-between items-center">
                                     <div class="flex items-center gap-2">
-                                        <!-- Input Kuantitas (Mendukung Desimal) -->
                                         <input 
                                             v-model.number="item.qty" 
                                             type="number" 
@@ -239,5 +290,17 @@ const submitCheckout = () => {
                 </div>
             </div>
         </div>
+
+        <!-- MODAL KUSTOM DILETAKKAN DI SINI -->
+        <ConfirmModal 
+            :show="showModal" 
+            :title="modalTitle"
+            :message="modalMessage" 
+            :isPrompt="isPromptMode"
+            :placeholder="modalPlaceholder"
+            @confirm="handleModalConfirm" 
+            @close="handleModalClose" 
+        />
+        
     </AuthenticatedLayout>
 </template>

@@ -98,7 +98,7 @@ const formatDate = (dateString) => {
                                 <td class="p-3 text-sm text-gray-600">{{ formatDate(item.created_at) }}</td>
                                 <td class="p-3 font-semibold">{{ item.product?.name || 'Produk Dihapus' }}</td>
                                 <td class="p-3 text-center text-gray-500">{{ parseFloat(item.system_stock) }}</td>
-                                <td class="p-3 text-center font-bold">{{ parseFloat(item.actual_stock) }}</td>
+                                <td class="p-3 text-center font-bold">{{ parseFloat(item.physical_stock) }}</td>
                                 <td class="p-3 text-center font-bold" :class="item.adjustment < 0 ? 'text-red-600' : 'text-green-600'">
                                     {{ item.adjustment > 0 ? '+' : '' }}{{ parseFloat(item.adjustment) }}
                                 </td>

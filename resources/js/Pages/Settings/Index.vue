@@ -1,9 +1,39 @@
 <script setup>
+import { ref } from 'vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue'; // <-- Import komponen modal kita
 
 const props = defineProps({ setting: Object });
 
+// === STATE MODAL KUSTOM ===
+const showModal = ref(false);
+const modalTitle = ref('');
+const modalMessage = ref('');
+let resolveModal = null;
+
+// Fungsi pemanggil modal dinamis
+const customAlert = (title, message) => {
+    modalTitle.value = title;
+    modalMessage.value = message;
+    showModal.value = true;
+    
+    return new Promise((resolve) => {
+        resolveModal = resolve;
+    });
+};
+
+const handleModalConfirm = () => {
+    showModal.value = false;
+    if (resolveModal) resolveModal(true);
+};
+
+const handleModalClose = () => {
+    showModal.value = false;
+    if (resolveModal) resolveModal(false);
+};
+
+// === FORM STATE ===
 const form = useForm({
     store_name: props.setting.store_name,
     store_address: props.setting.store_address,
@@ -14,7 +44,10 @@ const form = useForm({
 const submit = () => {
     form.post(route('settings.update'), {
         preserveScroll: true,
-        onSuccess: () => alert('Pengaturan berhasil disimpan!')
+        onSuccess: async () => {
+            // Ganti alert bawaan dengan modal kustom
+            await customAlert('Berhasil', 'Pengaturan profil toko berhasil disimpan!');
+        }
     });
 };
 </script>
@@ -64,5 +97,16 @@ const submit = () => {
                 </form>
             </div>
         </div>
+
+        <!-- MODAL KUSTOM DILETAKKAN DI SINI -->
+        <ConfirmModal 
+            :show="showModal" 
+            :title="modalTitle"
+            :message="modalMessage" 
+            :isPrompt="false"
+            @confirm="handleModalConfirm" 
+            @close="handleModalClose" 
+        />
+        
     </AuthenticatedLayout>
 </template>
