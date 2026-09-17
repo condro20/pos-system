@@ -5,9 +5,24 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Pagination from '@/Components/Pagination.vue';
 
 const props = defineProps({
-    purchases: Object,
-    filters: Object,
+    purchases: {
+        type: Object,
+        default: () => ({
+            data: [],
+            links: [],
+        }),
+    },
+
+    filters: {
+        type: Object,
+        default: () => ({}),
+    },
 });
+
+
+// =========================================================
+// FILTER
+// =========================================================
 
 const search = ref(
     props.filters?.search || ''
@@ -21,16 +36,26 @@ const sortDirection = ref(
     props.filters?.direction || 'desc'
 );
 
-// ==========================================
+
+// =========================================================
+// MODAL
+// =========================================================
+
+const showModal = ref(false);
+
+const selectedData = ref(null);
+
+
+// =========================================================
 // FETCH DATA
-// ==========================================
+// =========================================================
 
 const fetchData = () => {
 
     router.get(
         route('purchases.index'),
         {
-            search: search.value,
+            search: search.value.trim(),
             sort: sortField.value,
             direction: sortDirection.value,
         },
@@ -44,11 +69,11 @@ const fetchData = () => {
 };
 
 
-// ==========================================
-// DEBOUNCE SEARCH
-// ==========================================
+// =========================================================
+// SEARCH
+// =========================================================
 
-let searchTimeout;
+let searchTimeout = null;
 
 watch(search, () => {
 
@@ -61,9 +86,9 @@ watch(search, () => {
 });
 
 
-// ==========================================
-// SORTING
-// ==========================================
+// =========================================================
+// SORT
+// =========================================================
 
 const sortBy = (field) => {
 
@@ -77,7 +102,6 @@ const sortBy = (field) => {
     } else {
 
         sortField.value = field;
-
         sortDirection.value = 'asc';
 
     }
@@ -87,21 +111,22 @@ const sortBy = (field) => {
 };
 
 
-// ==========================================
-// MODAL DETAIL
-// ==========================================
+// =========================================================
+// OPEN MODAL
+// =========================================================
 
-const showModal = ref(false);
+const openModal = (purchase) => {
 
-const selectedData = ref(null);
-
-const openModal = (data) => {
-
-    selectedData.value = data;
+    selectedData.value = purchase;
 
     showModal.value = true;
 
 };
+
+
+// =========================================================
+// CLOSE MODAL
+// =========================================================
 
 const closeModal = () => {
 
@@ -112,9 +137,9 @@ const closeModal = () => {
 };
 
 
-// ==========================================
+// =========================================================
 // PRINT PO
-// ==========================================
+// =========================================================
 
 const printPurchase = () => {
 
@@ -136,9 +161,9 @@ const printPurchase = () => {
 };
 
 
-// ==========================================
+// =========================================================
 // FORMAT RUPIAH
-// ==========================================
+// =========================================================
 
 const formatRp = (value) => {
 
@@ -148,6 +173,7 @@ const formatRp = (value) => {
             style: 'currency',
             currency: 'IDR',
             minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
         }
     ).format(
         Number(value) || 0
@@ -156,9 +182,9 @@ const formatRp = (value) => {
 };
 
 
-// ==========================================
-// FORMAT QUANTITY
-// ==========================================
+// =========================================================
+// FORMAT QTY
+// =========================================================
 
 const formatQty = (value) => {
 
@@ -167,6 +193,7 @@ const formatQty = (value) => {
     return new Intl.NumberFormat(
         'id-ID',
         {
+            minimumFractionDigits: 0,
             maximumFractionDigits: 3,
         }
     ).format(number);
@@ -174,9 +201,9 @@ const formatQty = (value) => {
 };
 
 
-// ==========================================
+// =========================================================
 // FORMAT DATE
-// ==========================================
+// =========================================================
 
 const formatDate = (dateString) => {
 
@@ -185,6 +212,10 @@ const formatDate = (dateString) => {
     }
 
     const date = new Date(dateString);
+
+    if (Number.isNaN(date.getTime())) {
+        return '-';
+    }
 
     return date.toLocaleDateString(
         'id-ID',
@@ -208,9 +239,15 @@ const formatDate = (dateString) => {
 
     <AuthenticatedLayout>
 
+        <!-- ================================================= -->
+        <!-- HEADER -->
+        <!-- ================================================= -->
+
         <template #header>
 
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div
+                class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+            >
 
                 <div>
 
@@ -239,16 +276,23 @@ const formatDate = (dateString) => {
         </template>
 
 
-        <div class="py-12 max-w-7xl mx-auto sm:px-6 lg:px-8">
+        <!-- ================================================= -->
+        <!-- CONTENT -->
+        <!-- ================================================= -->
 
-            <div class="bg-white p-6 shadow-sm sm:rounded-lg">
+        <div
+            class="py-12 max-w-7xl mx-auto sm:px-6 lg:px-8"
+        >
 
+            <div
+                class="bg-white p-6 shadow-sm sm:rounded-lg"
+            >
 
-                <!-- ==========================================
-                     SEARCH
-                =========================================== -->
+                <!-- SEARCH -->
 
-                <div class="relative w-full md:w-1/3 mb-6">
+                <div
+                    class="relative w-full md:w-1/3 mb-6"
+                >
 
                     <input
                         v-model="search"
@@ -261,8 +305,7 @@ const formatDate = (dateString) => {
                         v-if="search"
                         type="button"
                         @click="search = ''"
-                        class="absolute right-3 top-2.5 text-gray-400 cursor-pointer font-bold text-lg hover:text-red-500"
-                        aria-label="Hapus pencarian"
+                        class="absolute right-3 top-2.5 text-gray-400 hover:text-red-500 font-bold text-lg"
                     >
                         &times;
                     </button>
@@ -270,21 +313,19 @@ const formatDate = (dateString) => {
                 </div>
 
 
-                <!-- ==========================================
-                     TABLE
-                =========================================== -->
+                <!-- TABLE -->
 
                 <div class="overflow-x-auto">
 
-                    <table class="w-full text-left border-collapse">
+                    <table
+                        class="w-full text-left border-collapse"
+                    >
 
                         <thead>
 
                             <tr
                                 class="bg-gray-100 border-b-2 text-gray-700"
                             >
-
-                                <!-- Tanggal -->
 
                                 <th
                                     class="p-3 cursor-pointer hover:bg-gray-200 transition select-none"
@@ -307,8 +348,6 @@ const formatDate = (dateString) => {
                                 </th>
 
 
-                                <!-- PO -->
-
                                 <th
                                     class="p-3 cursor-pointer hover:bg-gray-200 transition select-none"
                                     @click="sortBy('invoice_no')"
@@ -329,8 +368,6 @@ const formatDate = (dateString) => {
 
                                 </th>
 
-
-                                <!-- Supplier -->
 
                                 <th
                                     class="p-3 cursor-pointer hover:bg-gray-200 transition select-none"
@@ -353,8 +390,6 @@ const formatDate = (dateString) => {
                                 </th>
 
 
-                                <!-- Total -->
-
                                 <th
                                     class="p-3 text-right cursor-pointer hover:bg-gray-200 transition select-none"
                                     @click="sortBy('grand_total')"
@@ -375,11 +410,6 @@ const formatDate = (dateString) => {
 
                                 </th>
 
-
-                                <th class="p-3 text-center">
-                                    Aksi
-                                </th>
-
                             </tr>
 
                         </thead>
@@ -396,24 +426,36 @@ const formatDate = (dateString) => {
                                 <td
                                     class="p-3 text-sm text-gray-600"
                                 >
-                                    {{ formatDate(item.created_at) }}
+                                    {{
+                                        formatDate(
+                                            item.created_at
+                                        )
+                                    }}
                                 </td>
 
 
+                                <!-- CLICKABLE PO -->
+
                                 <td class="p-3">
 
-                                    <span
-                                        class="font-semibold text-indigo-700"
+                                    <button
+                                        type="button"
+                                        @click="openModal(item)"
+                                        class="font-semibold text-indigo-700 hover:text-indigo-900 hover:underline transition"
+                                        :title="'Lihat detail ' + item.invoice_no"
                                     >
                                         {{ item.invoice_no }}
-                                    </span>
+                                    </button>
 
                                 </td>
 
 
                                 <td class="p-3">
 
-                                    {{ item.supplier?.name || '-' }}
+                                    {{
+                                        item.supplier?.name
+                                        || '-'
+                                    }}
 
                                 </td>
 
@@ -421,58 +463,25 @@ const formatDate = (dateString) => {
                                 <td
                                     class="p-3 text-right font-bold text-red-600"
                                 >
-                                    {{ formatRp(item.grand_total) }}
-                                </td>
-
-
-                                <td
-                                    class="p-3 text-center"
-                                >
-
-                                    <button
-                                        type="button"
-                                        @click="openModal(item)"
-                                        class="bg-blue-100 text-blue-700 px-3 py-1 rounded text-sm font-bold hover:bg-blue-200 transition"
-                                    >
-                                        Detail
-                                    </button>
-
+                                    {{
+                                        formatRp(
+                                            item.grand_total
+                                        )
+                                    }}
                                 </td>
 
                             </tr>
 
-
-                            <!-- EMPTY -->
 
                             <tr
                                 v-if="purchases.data.length === 0"
                             >
 
                                 <td
-                                    colspan="5"
+                                    colspan="4"
                                     class="p-10 text-center text-gray-500 font-medium"
                                 >
-
-                                    <div class="flex flex-col items-center">
-
-                                        <svg
-                                            class="w-12 h-12 text-gray-300 mb-3"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <path
-                                                stroke-linecap="round"
-                                                stroke-linejoin="round"
-                                                stroke-width="1.5"
-                                                d="M9 14l6-6m-5.5 1.5h.01M14.5 14.5h.01M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
-                                            />
-                                        </svg>
-
-                                        Belum ada riwayat pembelian.
-
-                                    </div>
-
+                                    Belum ada riwayat pembelian.
                                 </td>
 
                             </tr>
@@ -484,9 +493,7 @@ const formatDate = (dateString) => {
                 </div>
 
 
-                <!-- ==========================================
-                     PAGINATION
-                =========================================== -->
+                <!-- PAGINATION -->
 
                 <Pagination
                     :links="purchases.links"
@@ -499,9 +506,9 @@ const formatDate = (dateString) => {
     </AuthenticatedLayout>
 
 
-    <!-- ==========================================
-         DETAIL MODAL
-    =========================================== -->
+    <!-- ================================================= -->
+    <!-- MODAL DETAIL PO -->
+    <!-- ================================================= -->
 
     <div
         v-if="showModal && selectedData"
@@ -540,7 +547,6 @@ const formatDate = (dateString) => {
                     type="button"
                     @click="closeModal"
                     class="text-gray-500 hover:text-red-500 font-bold text-2xl"
-                    aria-label="Tutup"
                 >
                     &times;
                 </button>
@@ -550,7 +556,9 @@ const formatDate = (dateString) => {
 
             <!-- BODY -->
 
-            <div class="p-6">
+            <div
+                class="p-6 max-h-[70vh] overflow-y-auto"
+            >
 
                 <!-- INFORMATION -->
 
@@ -565,7 +573,10 @@ const formatDate = (dateString) => {
                         </p>
 
                         <p class="font-semibold text-gray-800">
-                            {{ selectedData.supplier?.name || '-' }}
+                            {{
+                                selectedData.supplier?.name
+                                || '-'
+                            }}
                         </p>
 
                     </div>
@@ -578,7 +589,11 @@ const formatDate = (dateString) => {
                         </p>
 
                         <p class="font-semibold text-gray-800">
-                            {{ formatDate(selectedData.created_at) }}
+                            {{
+                                formatDate(
+                                    selectedData.created_at
+                                )
+                            }}
                         </p>
 
                     </div>
@@ -591,7 +606,10 @@ const formatDate = (dateString) => {
                         </p>
 
                         <p class="font-semibold text-gray-800">
-                            {{ selectedData.user?.name || '-' }}
+                            {{
+                                selectedData.user?.name
+                                || '-'
+                            }}
                         </p>
 
                     </div>
@@ -602,7 +620,7 @@ const formatDate = (dateString) => {
                 <!-- ITEMS -->
 
                 <div
-                    class="max-h-[50vh] overflow-y-auto border rounded-lg"
+                    class="border rounded-lg overflow-hidden"
                 >
 
                     <table
@@ -610,7 +628,7 @@ const formatDate = (dateString) => {
                     >
 
                         <thead
-                            class="bg-gray-100 border-b-2 sticky top-0"
+                            class="bg-gray-100 border-b-2"
                         >
 
                             <tr>
@@ -628,7 +646,7 @@ const formatDate = (dateString) => {
                                 </th>
 
                                 <th class="p-3 text-right">
-                                    Kuantitas
+                                    Qty
                                 </th>
 
                                 <th class="p-3 text-right">
@@ -655,14 +673,12 @@ const formatDate = (dateString) => {
                                     class="border-b"
                                 >
 
-                                    <td class="p-3">
+                                    <td class="p-3 font-medium">
 
-                                        <div class="font-medium">
-                                            {{
-                                                detail.product?.name ||
-                                                'Produk Dihapus'
-                                            }}
-                                        </div>
+                                        {{
+                                            detail.product?.name
+                                            || 'Produk Dihapus'
+                                        }}
 
                                     </td>
 
@@ -670,7 +686,8 @@ const formatDate = (dateString) => {
                                     <td class="p-3 text-gray-600">
 
                                         {{
-                                            detail.product?.unit || '-'
+                                            detail.product?.unit
+                                            || '-'
                                         }}
 
                                     </td>
@@ -691,7 +708,11 @@ const formatDate = (dateString) => {
                                         class="p-3 text-right font-bold text-green-600"
                                     >
 
-                                        +{{ formatQty(detail.quantity) }}
+                                        +{{
+                                            formatQty(
+                                                detail.quantity
+                                            )
+                                        }}
 
                                     </td>
 
@@ -717,7 +738,7 @@ const formatDate = (dateString) => {
 
                                 <td
                                     colspan="5"
-                                    class="p-6 text-center text-red-500 font-bold italic"
+                                    class="p-6 text-center text-red-500 font-bold"
                                 >
                                     Data barang masuk tidak ditemukan.
                                 </td>
@@ -739,7 +760,9 @@ const formatDate = (dateString) => {
 
                     <div class="text-right">
 
-                        <p class="text-sm text-gray-500">
+                        <p
+                            class="text-sm text-gray-500"
+                        >
                             Total Pembelian
                         </p>
 
@@ -763,40 +786,24 @@ const formatDate = (dateString) => {
             <!-- FOOTER -->
 
             <div
-                class="px-6 py-4 border-t bg-gray-50 flex flex-col sm:flex-row justify-end gap-2"
+                class="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3"
             >
 
                 <button
                     type="button"
-                    @click="closeModal"
-                    class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-5 py-2 rounded shadow font-bold transition"
+                    @click="printPurchase"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded shadow font-bold transition"
                 >
-                    Tutup
+                    🖨 Cetak PO
                 </button>
 
 
                 <button
                     type="button"
-                    @click="printPurchase"
-                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded shadow font-bold transition inline-flex items-center justify-center gap-2"
+                    @click="closeModal"
+                    class="bg-gray-800 hover:bg-gray-900 text-white px-5 py-2 rounded shadow font-bold transition"
                 >
-
-                    <svg
-                        class="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"
-                        />
-                    </svg>
-
-                    Cetak PO A3
-
+                    Tutup
                 </button>
 
             </div>

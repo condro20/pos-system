@@ -18,18 +18,18 @@
     <style>
 
         /*
-        ==========================================
+        ==========================================================
         PAGE PRINT
-        A3 LANDSCAPE
+        A5 LANDSCAPE
 
-        A3:
-        420mm x 297mm
-        ==========================================
+        A5:
+        210mm x 148mm
+        ==========================================================
         */
 
         @page {
-            size: A3 landscape;
-            margin: 12mm;
+            size: A5 landscape;
+            margin: 8mm;
         }
 
 
@@ -53,7 +53,7 @@
 
             color: #111827;
 
-            font-size: 12px;
+            font-size: 9px;
 
             background: white;
         }
@@ -61,101 +61,107 @@
 
         .page {
             width: 100%;
-            min-height: 100%;
         }
 
 
         /*
-        ==========================================
+        ==========================================================
         HEADER
-        ==========================================
+        ==========================================================
         */
 
         .header {
+
             display: flex;
 
             justify-content: space-between;
 
             align-items: flex-start;
 
-            border-bottom: 3px solid #111827;
+            border-bottom: 2px solid #111827;
 
-            padding-bottom: 14px;
+            padding-bottom: 7px;
 
-            margin-bottom: 16px;
+            margin-bottom: 9px;
         }
 
 
         .company {
-            width: 60%;
+            width: 58%;
         }
 
 
         .company-name {
-            font-size: 26px;
+
+            font-size: 17px;
 
             font-weight: 800;
 
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
 
-            margin-bottom: 6px;
+            margin-bottom: 3px;
         }
 
 
         .company-info {
-            font-size: 11px;
 
-            line-height: 1.6;
+            font-size: 7.5px;
+
+            line-height: 1.4;
 
             color: #374151;
         }
 
 
         .document-title {
+
             text-align: right;
 
-            width: 40%;
+            width: 42%;
         }
 
 
         .document-title h1 {
+
             margin: 0;
 
-            font-size: 30px;
+            font-size: 18px;
 
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
 
             font-weight: 800;
         }
 
 
         .document-title .subtitle {
-            margin-top: 5px;
 
-            font-size: 12px;
+            margin-top: 2px;
+
+            font-size: 7px;
 
             color: #6b7280;
 
             text-transform: uppercase;
 
-            letter-spacing: 1px;
+            letter-spacing: 0.6px;
         }
 
 
         /*
-        ==========================================
+        ==========================================================
         INFORMATION
-        ==========================================
+        ==========================================================
         */
 
         .info-wrapper {
+
             display: flex;
 
             justify-content: space-between;
 
-            gap: 30px;
+            gap: 12px;
 
-            margin-bottom: 18px;
+            margin-bottom: 9px;
         }
 
 
@@ -165,7 +171,8 @@
 
 
         .info-title {
-            font-size: 11px;
+
+            font-size: 7.5px;
 
             font-weight: 700;
 
@@ -173,11 +180,12 @@
 
             color: #6b7280;
 
-            margin-bottom: 5px;
+            margin-bottom: 3px;
         }
 
 
         .info-table {
+
             width: 100%;
 
             border-collapse: collapse;
@@ -185,14 +193,16 @@
 
 
         .info-table td {
-            padding: 3px 0;
+
+            padding: 1.5px 0;
 
             vertical-align: top;
         }
 
 
         .info-table td:first-child {
-            width: 130px;
+
+            width: 75px;
 
             font-weight: 600;
 
@@ -201,28 +211,30 @@
 
 
         /*
-        ==========================================
+        ==========================================================
         ITEMS TABLE
-        ==========================================
+        ==========================================================
         */
 
         .items-table {
+
             width: 100%;
 
             border-collapse: collapse;
 
-            margin-top: 8px;
+            margin-top: 4px;
         }
 
 
         .items-table thead th {
+
             background: #111827;
 
             color: white;
 
-            padding: 9px 10px;
+            padding: 5px 5px;
 
-            font-size: 11px;
+            font-size: 7px;
 
             text-transform: uppercase;
 
@@ -231,87 +243,101 @@
 
 
         .items-table tbody td {
-            padding: 8px 10px;
+
+            padding: 4px 5px;
 
             border: 1px solid #d1d5db;
 
             vertical-align: middle;
+
+            font-size: 8px;
         }
 
 
         .items-table tbody tr:nth-child(even) {
+
             background: #f9fafb;
         }
 
 
         .no {
-            width: 50px;
+
+            width: 25px;
 
             text-align: center;
         }
 
 
         .product {
+
             text-align: left;
         }
 
 
         .unit {
-            width: 100px;
+
+            width: 50px;
 
             text-align: center;
         }
 
 
         .qty {
-            width: 110px;
+
+            width: 55px;
 
             text-align: right;
         }
 
 
         .price {
-            width: 170px;
+
+            width: 85px;
 
             text-align: right;
         }
 
 
         .subtotal {
-            width: 190px;
+
+            width: 95px;
 
             text-align: right;
         }
 
 
         /*
-        ==========================================
+        ==========================================================
         TOTAL
-        ==========================================
+        ==========================================================
         */
 
         .summary-wrapper {
+
             display: flex;
 
             justify-content: flex-end;
 
-            margin-top: 14px;
+            margin-top: 7px;
         }
 
 
         .summary-table {
-            width: 380px;
+
+            width: 210px;
 
             border-collapse: collapse;
         }
 
 
         .summary-table td {
-            padding: 7px 10px;
+
+            padding: 3px 5px;
         }
 
 
         .summary-table .label {
+
             text-align: right;
 
             font-weight: 600;
@@ -321,18 +347,20 @@
 
 
         .summary-table .total {
-            border-top: 2px solid #111827;
 
-            font-size: 18px;
+            border-top: 1.5px solid #111827;
+
+            font-size: 10px;
 
             font-weight: 800;
         }
 
 
         .summary-table .total-value {
-            border-top: 2px solid #111827;
 
-            font-size: 20px;
+            border-top: 1.5px solid #111827;
+
+            font-size: 11px;
 
             font-weight: 800;
 
@@ -341,77 +369,88 @@
 
 
         /*
-        ==========================================
+        ==========================================================
         NOTES
-        ==========================================
+        ==========================================================
         */
 
         .notes {
-            margin-top: 25px;
 
-            padding: 10px 12px;
+            margin-top: 10px;
+
+            padding: 5px 6px;
 
             border: 1px solid #d1d5db;
 
-            min-height: 55px;
+            min-height: 30px;
+
+            font-size: 7px;
         }
 
 
         .notes-title {
+
             font-weight: 700;
 
-            margin-bottom: 5px;
+            margin-bottom: 2px;
         }
 
 
         /*
-        ==========================================
+        ==========================================================
         SIGNATURE
-        ==========================================
+        ==========================================================
         */
 
         .signature-wrapper {
+
             display: flex;
 
             justify-content: space-between;
 
-            margin-top: 35px;
+            margin-top: 12px;
 
             page-break-inside: avoid;
         }
 
 
         .signature {
-            width: 240px;
+
+            width: 100px;
 
             text-align: center;
+
+            font-size: 7px;
         }
 
 
         .signature-title {
-            margin-bottom: 60px;
+
+            margin-bottom: 25px;
 
             font-weight: 600;
         }
 
 
         .signature-line {
+
             border-top: 1px solid #111827;
 
-            padding-top: 6px;
+            padding-top: 3px;
         }
 
 
         /*
-        ==========================================
+        ==========================================================
         FOOTER
-        ==========================================
+        ==========================================================
         */
 
         .footer {
-            margin-top: 25px;
 
-            padding-top: 8px;
+            margin-top: 9px;
+
+            padding-top: 4px;
 
             border-top: 1px solid #d1d5db;
 
@@ -419,41 +458,43 @@
 
             justify-content: space-between;
 
-            font-size: 10px;
+            font-size: 6.5px;
 
             color: #6b7280;
         }
 
 
         /*
-        ==========================================
-        PRINT CONTROL
-        ==========================================
+        ==========================================================
+        PRINT BUTTON
+        ==========================================================
         */
 
         .print-button-wrapper {
+
             position: fixed;
 
-            top: 20px;
+            top: 15px;
 
-            right: 20px;
+            right: 15px;
 
             z-index: 999;
         }
 
 
         .print-button {
+
             background: #111827;
 
             color: white;
 
             border: none;
 
-            padding: 10px 18px;
+            padding: 8px 12px;
 
-            border-radius: 6px;
+            border-radius: 5px;
 
-            font-size: 13px;
+            font-size: 10px;
 
             font-weight: 700;
 
@@ -462,53 +503,86 @@
 
 
         .print-button:hover {
+
             background: #374151;
         }
 
 
+        /*
+        ==========================================================
+        PRINT
+        ==========================================================
+        */
+
         @media print {
 
             .print-button-wrapper {
+
                 display: none !important;
             }
 
+
             body {
+
                 background: white;
             }
 
+
             .page {
+
                 width: 100%;
             }
 
+
             .items-table thead {
+
                 display: table-header-group;
             }
 
+
             .items-table tr {
+
                 page-break-inside: avoid;
             }
 
+
             .signature-wrapper {
+
                 page-break-inside: avoid;
             }
 
         }
 
 
+        /*
+        ==========================================================
+        SCREEN PREVIEW
+        ==========================================================
+        */
+
         @media screen {
 
             body {
+
                 background: #e5e7eb;
 
                 padding: 20px;
             }
 
+
             .page {
+
                 background: white;
+
+                width: 210mm;
+
+                min-height: 148mm;
 
                 max-width: 100%;
 
-                padding: 20px;
+                margin: 0 auto;
+
+                padding: 8mm;
 
                 box-shadow:
                     0 4px 15px
@@ -525,9 +599,9 @@
 <body>
 
 
-    <!-- ==========================================
+    <!-- ======================================================
          PRINT BUTTON
-    =========================================== -->
+    ======================================================= -->
 
     <div class="print-button-wrapper">
 
@@ -545,9 +619,9 @@
     <div class="page">
 
 
-        <!-- ==========================================
+        <!-- ======================================================
              HEADER
-        =========================================== -->
+        ======================================================= -->
 
         <div class="header">
 
@@ -558,9 +632,13 @@
                 </div>
 
                 <div class="company-info">
+
                     Dokumen Purchase Order / Barang Masuk
+
                     <br>
+
                     Sistem Manajemen Penjualan & Persediaan
+
                 </div>
 
             </div>
@@ -581,9 +659,9 @@
         </div>
 
 
-        <!-- ==========================================
+        <!-- ======================================================
              INFORMATION
-        =========================================== -->
+        ======================================================= -->
 
         <div class="info-wrapper">
 
@@ -596,6 +674,7 @@
                     Informasi Purchase Order
                 </div>
 
+
                 <table class="info-table">
 
                     <tr>
@@ -605,10 +684,12 @@
                         </td>
 
                         <td>
+
                             :
                             <strong>
                                 {{ $purchase->invoice_no }}
                             </strong>
+
                         </td>
 
                     </tr>
@@ -621,8 +702,10 @@
                         </td>
 
                         <td>
+
                             :
                             {{ $purchase->created_at?->format('d F Y H:i') }}
+
                         </td>
 
                     </tr>
@@ -635,8 +718,10 @@
                         </td>
 
                         <td>
+
                             :
                             {{ $purchase->user?->name ?? '-' }}
+
                         </td>
 
                     </tr>
@@ -654,6 +739,7 @@
                     Supplier / Agen
                 </div>
 
+
                 <table class="info-table">
 
                     <tr>
@@ -663,10 +749,12 @@
                         </td>
 
                         <td>
+
                             :
                             <strong>
                                 {{ $purchase->supplier?->name ?? '-' }}
                             </strong>
+
                         </td>
 
                     </tr>
@@ -679,8 +767,7 @@
                         </td>
 
                         <td>
-                            :
-                            Barang Masuk
+                            : Barang Masuk
                         </td>
 
                     </tr>
@@ -692,9 +779,9 @@
         </div>
 
 
-        <!-- ==========================================
+        <!-- ======================================================
              ITEM TABLE
-        =========================================== -->
+        ======================================================= -->
 
         <table class="items-table">
 
@@ -747,26 +834,34 @@
 
                         <td class="product">
 
-                            {{ $detail->product?->name ?? 'Produk Dihapus' }}
+                            {{
+                                $detail->product?->name
+                                ?? 'Produk Dihapus'
+                            }}
 
                         </td>
 
 
                         <td class="unit">
 
-                            {{ $detail->product?->unit ?? '-' }}
+                            {{
+                                $detail->product?->unit
+                                ?? '-'
+                            }}
 
                         </td>
 
 
                         <td class="qty">
 
-                            {{ number_format(
-                                (float) $detail->quantity,
-                                3,
-                                ',',
-                                '.'
-                            ) }}
+                            {{
+                                number_format(
+                                    (float) $detail->quantity,
+                                    3,
+                                    ',',
+                                    '.'
+                                )
+                            }}
 
                         </td>
 
@@ -774,12 +869,14 @@
                         <td class="price">
 
                             Rp
-                            {{ number_format(
-                                (float) $detail->price,
-                                0,
-                                ',',
-                                '.'
-                            ) }}
+                            {{
+                                number_format(
+                                    (float) $detail->price,
+                                    0,
+                                    ',',
+                                    '.'
+                                )
+                            }}
 
                         </td>
 
@@ -787,12 +884,14 @@
                         <td class="subtotal">
 
                             Rp
-                            {{ number_format(
-                                (float) $detail->subtotal,
-                                0,
-                                ',',
-                                '.'
-                            ) }}
+                            {{
+                                number_format(
+                                    (float) $detail->subtotal,
+                                    0,
+                                    ',',
+                                    '.'
+                                )
+                            }}
 
                         </td>
 
@@ -806,6 +905,7 @@
                             colspan="6"
                             style="text-align:center;"
                         >
+
                             Tidak ada detail barang.
 
                         </td>
@@ -819,9 +919,9 @@
         </table>
 
 
-        <!-- ==========================================
+        <!-- ======================================================
              TOTAL
-        =========================================== -->
+        ======================================================= -->
 
         <div class="summary-wrapper">
 
@@ -836,12 +936,14 @@
                     <td class="total-value">
 
                         Rp
-                        {{ number_format(
-                            (float) $purchase->grand_total,
-                            0,
-                            ',',
-                            '.'
-                        ) }}
+                        {{
+                            number_format(
+                                (float) $purchase->grand_total,
+                                0,
+                                ',',
+                                '.'
+                            )
+                        }}
 
                     </td>
 
@@ -852,9 +954,9 @@
         </div>
 
 
-        <!-- ==========================================
+        <!-- ======================================================
              NOTES
-        =========================================== -->
+        ======================================================= -->
 
         <div class="notes">
 
@@ -863,16 +965,18 @@
             </div>
 
             <div>
+
                 Dokumen ini merupakan bukti pencatatan
                 Purchase Order / barang masuk pada sistem.
+
             </div>
 
         </div>
 
 
-        <!-- ==========================================
+        <!-- ======================================================
              SIGNATURE
-        =========================================== -->
+        ======================================================= -->
 
         <div class="signature-wrapper">
 
@@ -897,7 +1001,12 @@
                 </div>
 
                 <div class="signature-line">
-                    {{ $purchase->user?->name ?? 'Tanda Tangan' }}
+
+                    {{
+                        $purchase->user?->name
+                        ?? 'Tanda Tangan'
+                    }}
+
                 </div>
 
             </div>
@@ -918,9 +1027,9 @@
         </div>
 
 
-        <!-- ==========================================
+        <!-- ======================================================
              FOOTER
-        =========================================== -->
+        ======================================================= -->
 
         <div class="footer">
 
@@ -932,28 +1041,9 @@
                 PO: {{ $purchase->invoice_no }}
             </span>
 
-            <span>
-                {{ now()->format('d/m/Y H:i') }}
-            </span>
-
         </div>
 
-
     </div>
-
-
-    <script>
-
-        /*
-         * Saat halaman print dibuka,
-         * user masih dapat melihat preview
-         * terlebih dahulu.
-         *
-         * Tombol "Cetak PO" menggunakan
-         * window.print().
-         */
-
-    </script>
 
 </body>
 
