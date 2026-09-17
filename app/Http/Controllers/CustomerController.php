@@ -10,30 +10,79 @@ class CustomerController extends Controller
 {
     public function index(Request $request)
     {
-        $search = $request->input('search');
-        $sort = $request->input('sort', 'id'); // Default urut berdasarkan ID terbaru
-        $direction = $request->input('direction', 'desc');
+        $search = trim((string) $request->input('search', ''));
 
-        // Query data pelanggan
+        // =========================================================
+        // SORTING
+        // =========================================================
+
+        $allowedSorts = [
+            'id',
+            'name',
+            'phone',
+            'address',
+        ];
+
+        $sort = $request->input('sort', 'id');
+
+        if (!in_array($sort, $allowedSorts, true)) {
+            $sort = 'id';
+        }
+
+        $direction = strtolower(
+            $request->input('direction', 'desc')
+        );
+
+        if (!in_array($direction, ['asc', 'desc'], true)) {
+            $direction = 'desc';
+        }
+
+        // =========================================================
+        // QUERY
+        // =========================================================
+
         $query = Customer::query()
-            ->when($search, function ($q, $search) {
-                $q->where('name', 'ilike', "%{$search}%")
-                  ->orWhere('phone', 'ilike', "%{$search}%")
-                  ->orWhere('address', 'ilike', "%{$search}%");
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($query) use ($search) {
+                    $query->where(
+                        'name',
+                        'ilike',
+                        "%{$search}%"
+                    )
+                    ->orWhere(
+                        'phone',
+                        'ilike',
+                        "%{$search}%"
+                    )
+                    ->orWhere(
+                        'address',
+                        'ilike',
+                        "%{$search}%"
+                    );
+                });
             });
 
-        // Terapkan sorting dan pagination
-        $customers = $query->orderBy($sort, $direction)
+        // =========================================================
+        // SORTING + PAGINATION
+        // =========================================================
+
+        $customers = $query
+            ->orderBy($sort, $direction)
             ->paginate(10)
             ->withQueryString();
 
+        // =========================================================
+        // RESPONSE
+        // =========================================================
+
         return Inertia::render('Customers/Index', [
             'customers' => $customers,
+
             'filters' => [
                 'search' => $search,
                 'sort' => $sort,
-                'direction' => $direction
-            ]
+                'direction' => $direction,
+            ],
         ]);
     }
 
@@ -51,13 +100,15 @@ class CustomerController extends Controller
         ]);
 
         Customer::create($validated);
-        return redirect()->route('customers.index');
+
+        return redirect()
+            ->route('customers.index');
     }
 
     public function edit(Customer $customer)
     {
         return Inertia::render('Customers/Edit', [
-            'customer' => $customer
+            'customer' => $customer,
         ]);
     }
 
@@ -70,12 +121,16 @@ class CustomerController extends Controller
         ]);
 
         $customer->update($validated);
-        return redirect()->route('customers.index');
+
+        return redirect()
+            ->route('customers.index');
     }
 
     public function destroy(Customer $customer)
     {
         $customer->delete();
-        return redirect()->route('customers.index');
+
+        return redirect()
+            ->route('customers.index');
     }
 }

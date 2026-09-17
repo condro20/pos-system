@@ -13,79 +13,234 @@ class ReportController extends Controller
 {
     public function sales(Request $request)
     {
-        // 1. Tangkap parameter filter, pencarian, dan pengurutan
-        $startDate = $request->input('start_date', \Carbon\Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $endDate = $request->input('end_date', \Carbon\Carbon::now()->endOfMonth()->format('Y-m-d'));
-        
-        $search = $request->input('search');
-        $sort = $request->input('sort', 'created_at'); // Default terbaru di atas
-        $direction = $request->input('direction', 'desc');
+        // =========================================================
+        // 1. FILTER
+        // =========================================================
 
-        // 2. Buat Query Dasar dengan Eager Loading, Join, dan Subquery Profit
-        $baseQuery = \App\Models\Sale::with(['user', 'saleDetails.product'])
-            ->select('sales.*') 
-            ->leftJoin('users', 'sales.user_id', '=', 'users.id')
-            // 👇 TRIK PENGURUTAN: Tambahkan perhitungan profit langsung di dalam query database
-            ->addSelect(['profit_calc' => \App\Models\SaleDetail::selectRaw('SUM((selling_price - purchase_price) * quantity)')
-                ->whereColumn('sale_id', 'sales.id')
+        $startDate = $request->input(
+            'start_date',
+            Carbon::now()
+                ->startOfMonth()
+                ->format('Y-m-d')
+        );
+
+        $endDate = $request->input(
+            'end_date',
+            Carbon::now()
+                ->endOfMonth()
+                ->format('Y-m-d')
+        );
+
+        $search = trim(
+            (string) $request->input('search', '')
+        );
+
+        // =========================================================
+        // 2. SORTING
+        // =========================================================
+
+        $allowedSorts = [
+            'created_at',
+            'invoice_no',
+            'cashier',
+            'payment_method',
+            'grand_total',
+            'profit',
+        ];
+
+        $sort = $request->input(
+            'sort',
+            'created_at'
+        );
+
+        if (!in_array($sort, $allowedSorts, true)) {
+            $sort = 'created_at';
+        }
+
+        $direction = strtolower(
+            $request->input(
+                'direction',
+                'desc'
+            )
+        );
+
+        if (!in_array(
+            $direction,
+            ['asc', 'desc'],
+            true
+        )) {
+            $direction = 'desc';
+        }
+
+        // =========================================================
+        // 3. QUERY DASAR
+        // =========================================================
+
+        $baseQuery = Sale::with([
+            'user',
+            'saleDetails.product',
+        ])
+            ->select('sales.*')
+            ->leftJoin(
+                'users',
+                'sales.user_id',
+                '=',
+                'users.id'
+            )
+            ->addSelect([
+                'profit_calc' => \App\Models\SaleDetail::selectRaw(
+                    'SUM((selling_price - purchase_price) * quantity)'
+                )
+                    ->whereColumn(
+                        'sale_id',
+                        'sales.id'
+                    ),
             ])
-            ->whereBetween('sales.created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->when($search, function ($q, $search) {
-                $q->where(function($query) use ($search) {
-                    $query->where('sales.invoice_no', 'ilike', "%{$search}%")
-                          ->orWhere('users.name', 'ilike', "%{$search}%");
+            ->whereBetween(
+                'sales.created_at',
+                [
+                    $startDate . ' 00:00:00',
+                    $endDate . ' 23:59:59',
+                ]
+            )
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($query) use ($search) {
+                    $query->where(
+                        'sales.invoice_no',
+                        'ilike',
+                        "%{$search}%"
+                    )
+                    ->orWhere(
+                        'users.name',
+                        'ilike',
+                        "%{$search}%"
+                    );
                 });
             });
 
-        // 3. Hitung Ringkasan (Total Pendapatan, Laba, dan Transaksi)
-        $summaryQuery = clone $baseQuery;
-        $allFilteredSales = $summaryQuery->get(); 
-        
-        $totalRevenue = $allFilteredSales->sum('grand_total');
-        $totalTransactions = $allFilteredSales->count();
-        $totalProfit = $allFilteredSales->sum('profit_calc'); // Bisa langsung pakai hasil hitungan DB
+        // =========================================================
+        // 4. SUMMARY
+        // =========================================================
 
-        // 4. Terapkan Sorting pada Query Dasar
+        $summaryQuery = clone $baseQuery;
+
+        $allFilteredSales = $summaryQuery->get();
+
+        $totalRevenue = $allFilteredSales->sum(
+            'grand_total'
+        );
+
+        $totalTransactions = $allFilteredSales->count();
+
+        $totalProfit = $allFilteredSales->sum(
+            'profit_calc'
+        );
+
+        // =========================================================
+        // 5. SORTING
+        // =========================================================
+
         if ($sort === 'cashier') {
-            $baseQuery->orderBy('users.name', $direction);
+
+            $baseQuery->orderBy(
+                'users.name',
+                $direction
+            );
+
         } elseif ($sort === 'profit') {
-            $baseQuery->orderBy('profit_calc', $direction); // Sort menggunakan alias dari subquery
+
+            $baseQuery->orderBy(
+                'profit_calc',
+                $direction
+            );
+
         } else {
-            $baseQuery->orderBy('sales.' . $sort, $direction);
+
+            $baseQuery->orderBy(
+                'sales.' . $sort,
+                $direction
+            );
         }
 
-        // 5. Eksekusi Pagination
-        $paginatedSales = $baseQuery->paginate(15)->withQueryString();
+        // =========================================================
+        // 6. PAGINATION
+        // =========================================================
 
-        // 6. Format ulang data (Gunakan through agar pagination tidak rusak)
-        $formattedSales = $paginatedSales->through(function ($sale) {
-            return [
-                'id' => $sale->id,
-                'invoice_no' => $sale->invoice_no,
-                'date' => \Carbon\Carbon::parse($sale->created_at)->format('d/m/Y H:i'),
-                'cashier' => $sale->user ? $sale->user->name : 'Kasir Dihapus',
-                'grand_total' => $sale->grand_total,
-                'profit' => $sale->profit_calc ?? 0, // Ambil dari hasil subquery
-                'payment_method' => $sale->payment_method,
-                'sale_details' => $sale->saleDetails, 
-            ];
-        });
+        $paginatedSales = $baseQuery
+            ->paginate(15)
+            ->withQueryString();
 
-        return \Inertia\Inertia::render('Reports/Sales', [
-            'sales' => $formattedSales,
-            'summary' => [
-                'revenue' => $totalRevenue,
-                'profit' => $totalProfit,
-                'transactions' => $totalTransactions
-            ],
-            'filters' => [
-                'start_date' => $startDate,
-                'end_date' => $endDate,
-                'search' => $search,
-                'sort' => $sort,
-                'direction' => $direction
+        // =========================================================
+        // 7. FORMAT DATA
+        // =========================================================
+
+        $formattedSales = $paginatedSales->through(
+            function ($sale) {
+
+                return [
+                    'id' => $sale->id,
+
+                    'invoice_no' => $sale->invoice_no,
+
+                    'date' => Carbon::parse(
+                        $sale->created_at
+                    )->format('d/m/Y H:i'),
+
+                    'cashier' => $sale->user
+                        ? $sale->user->name
+                        : 'Kasir Dihapus',
+
+                    'grand_total' => $sale->grand_total,
+
+                    'profit' => $sale->profit_calc ?? 0,
+
+                    'payment_method' =>
+                        $sale->payment_method,
+
+                    'sale_details' =>
+                        $sale->saleDetails,
+                ];
+            }
+        );
+
+        // =========================================================
+        // 8. RESPONSE
+        // =========================================================
+
+        return Inertia::render(
+            'Reports/Sales',
+            [
+                'sales' => $formattedSales,
+
+                'summary' => [
+                    'revenue' =>
+                        $totalRevenue,
+
+                    'profit' =>
+                        $totalProfit,
+
+                    'transactions' =>
+                        $totalTransactions,
+                ],
+
+                'filters' => [
+                    'start_date' =>
+                        $startDate,
+
+                    'end_date' =>
+                        $endDate,
+
+                    'search' =>
+                        $search,
+
+                    'sort' =>
+                        $sort,
+
+                    'direction' =>
+                        $direction,
+                ],
             ]
-        ]);
+        );
     }
 
     public function stockCard(Request $request)

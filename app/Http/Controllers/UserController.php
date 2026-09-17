@@ -14,43 +14,105 @@ class UserController extends Controller
 {
     public function index(Request $request)
     {
-        $search = $request->input('search');
-        $sort = $request->input('sort', 'id'); // Default urut berdasarkan ID terbaru
-        $direction = $request->input('direction', 'desc');
+        $search = trim((string) $request->input('search', ''));
 
-        // Query dengan Eager Loading dan LeftJoin untuk Role
-        $query = User::with('role')
-            ->select('users.*')
-            ->leftJoin('roles', 'users.role_id', '=', 'roles.id')
-            ->when($search, function ($q, $search) {
-                $q->where('users.name', 'ilike', "%{$search}%")
-                  ->orWhere('users.email', 'ilike', "%{$search}%")
-                  ->orWhere('roles.name', 'ilike', "%{$search}%");
-            });
+        // =========================================================
+        // SORTING
+        // =========================================================
 
-        // Logika Sorting Khusus
-        if ($sort === 'role') {
-            $query->orderBy('roles.name', $direction);
-        } else {
-            $query->orderBy('users.' . $sort, $direction);
+        $allowedSorts = [
+            'id',
+            'name',
+            'email',
+            'role',
+        ];
+
+        $sort = $request->input('sort', 'id');
+
+        if (!in_array($sort, $allowedSorts, true)) {
+            $sort = 'id';
         }
 
-        $users = $query->paginate(10)->withQueryString();
+        $direction = strtolower(
+            $request->input('direction', 'desc')
+        );
+
+        if (!in_array($direction, ['asc', 'desc'], true)) {
+            $direction = 'desc';
+        }
+
+        // =========================================================
+        // QUERY
+        // =========================================================
+
+        $query = User::with('role')
+            ->select('users.*')
+            ->leftJoin(
+                'roles',
+                'users.role_id',
+                '=',
+                'roles.id'
+            )
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($query) use ($search) {
+                    $query->where(
+                        'users.name',
+                        'ilike',
+                        "%{$search}%"
+                    )
+                    ->orWhere(
+                        'users.email',
+                        'ilike',
+                        "%{$search}%"
+                    )
+                    ->orWhere(
+                        'roles.name',
+                        'ilike',
+                        "%{$search}%"
+                    );
+                });
+            });
+
+        // =========================================================
+        // SORTING KHUSUS ROLE
+        // =========================================================
+
+        if ($sort === 'role') {
+            $query->orderBy(
+                'roles.name',
+                $direction
+            );
+        } else {
+            $query->orderBy(
+                'users.' . $sort,
+                $direction
+            );
+        }
+
+        // =========================================================
+        // PAGINATION
+        // =========================================================
+
+        $users = $query
+            ->paginate(10)
+            ->withQueryString();
 
         return Inertia::render('Users/Index', [
             'users' => $users,
+
             'filters' => [
                 'search' => $search,
                 'sort' => $sort,
-                'direction' => $direction
-            ]
+                'direction' => $direction,
+            ],
         ]);
     }
 
     public function create()
     {
-        // Mengirim data role agar bisa dipilih di dropdown
-        return Inertia::render('Users/Create', ['roles' => Role::all()]);
+        return Inertia::render('Users/Create', [
+            'roles' => Role::all(),
+        ]);
     }
 
     public function store(Request $request)
@@ -58,7 +120,11 @@ class UserController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => ['required', 'confirmed', Password::defaults()],
+            'password' => [
+                'required',
+                'confirmed',
+                Password::defaults(),
+            ],
             'role_id' => 'required|exists:roles,id',
         ]);
 
@@ -69,14 +135,19 @@ class UserController extends Controller
             'role_id' => $request->role_id,
         ]);
 
-        return redirect()->route('users.index')->with('success', 'Pengguna baru berhasil ditambahkan.');
+        return redirect()
+            ->route('users.index')
+            ->with(
+                'success',
+                'Pengguna baru berhasil ditambahkan.'
+            );
     }
 
     public function edit(User $user)
     {
         return Inertia::render('Users/Edit', [
-            'userEdit' => $user, // Kita gunakan nama userEdit agar tidak bentrok dengan props auth.user bawaan Inertia
-            'roles' => Role::all()
+            'userEdit' => $user,
+            'roles' => Role::all(),
         ]);
     }
 
@@ -86,31 +157,51 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
             'role_id' => 'required|exists:roles,id',
-            'password' => ['nullable', 'confirmed', Password::defaults()], // Password opsional saat edit
+            'password' => [
+                'nullable',
+                'confirmed',
+                Password::defaults(),
+            ],
         ]);
 
         $user->name = $request->name;
         $user->email = $request->email;
         $user->role_id = $request->role_id;
 
-        // Jika password diisi, maka update passwordnya
         if ($request->filled('password')) {
-            $user->password = Hash::make($request->password);
+            $user->password = Hash::make(
+                $request->password
+            );
         }
 
         $user->save();
 
-        return redirect()->route('users.index')->with('success', 'Data pengguna berhasil diperbarui.');
+        return redirect()
+            ->route('users.index')
+            ->with(
+                'success',
+                'Data pengguna berhasil diperbarui.'
+            );
     }
 
     public function destroy(User $user)
     {
-        // Proteksi: Mencegah Owner menghapus akunnya sendiri yang sedang dipakai login
         if ($user->id === Auth::id()) {
-            return redirect()->back()->withErrors(['error' => 'Anda tidak dapat menghapus akun Anda sendiri.']);
+            return redirect()
+                ->back()
+                ->withErrors([
+                    'error' =>
+                        'Anda tidak dapat menghapus akun Anda sendiri.',
+                ]);
         }
 
         $user->delete();
-        return redirect()->route('users.index')->with('success', 'Pengguna berhasil dihapus.');
+
+        return redirect()
+            ->route('users.index')
+            ->with(
+                'success',
+                'Pengguna berhasil dihapus.'
+            );
     }
 }

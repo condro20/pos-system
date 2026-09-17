@@ -11,42 +11,102 @@ class ProductController extends Controller
 {
     public function index(Request $request)
     {
-        $search = $request->input('search');
-        $sort = $request->input('sort', 'id'); 
-        $direction = $request->input('direction', 'desc');
+        $search = trim((string) $request->input('search', ''));
 
-        // Kita gunakan leftJoin agar bisa melakukan sorting berdasarkan nama kategori
-        $query = Product::with('category')
-            ->select('products.*') // Wajib agar ID produk tidak tertimpa ID kategori
-            ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
-            ->when($search, function ($q, $search) {
-                $q->where('products.name', 'ilike', "%{$search}%")
-                  ->orWhere('products.barcode', 'ilike', "%{$search}%");
-            });
+        // =========================================================
+        // SORTING
+        // =========================================================
 
-        // Logika Sorting Khusus
-        if ($sort === 'category') {
-            $query->orderBy('categories.name', $direction); // Urutkan nama abjad kategori
-        } else {
-            $query->orderBy('products.' . $sort, $direction); // Urutkan kolom produk lainnya
+        $allowedSorts = [
+            'id',
+            'barcode',
+            'name',
+            'stock',
+            'purchase_price',
+            'selling_price',
+            'category',
+        ];
+
+        $sort = $request->input('sort', 'id');
+
+        if (!in_array($sort, $allowedSorts, true)) {
+            $sort = 'id';
         }
 
-        $products = $query->paginate(10)->withQueryString();
+        $direction = strtolower(
+            $request->input('direction', 'desc')
+        );
+
+        if (!in_array($direction, ['asc', 'desc'], true)) {
+            $direction = 'desc';
+        }
+
+        // =========================================================
+        // QUERY
+        // =========================================================
+
+        $query = Product::with('category')
+            ->select('products.*')
+            ->leftJoin(
+                'categories',
+                'products.category_id',
+                '=',
+                'categories.id'
+            )
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($query) use ($search) {
+                    $query->where(
+                        'products.name',
+                        'ilike',
+                        "%{$search}%"
+                    )
+                    ->orWhere(
+                        'products.barcode',
+                        'ilike',
+                        "%{$search}%"
+                    );
+                });
+            });
+
+        // =========================================================
+        // SORTING KHUSUS KATEGORI
+        // =========================================================
+
+        if ($sort === 'category') {
+            $query->orderBy(
+                'categories.name',
+                $direction
+            );
+        } else {
+            $query->orderBy(
+                'products.' . $sort,
+                $direction
+            );
+        }
+
+        // =========================================================
+        // PAGINATION
+        // =========================================================
+
+        $products = $query
+            ->paginate(10)
+            ->withQueryString();
 
         return Inertia::render('Products/Index', [
             'products' => $products,
+
             'filters' => [
                 'search' => $search,
                 'sort' => $sort,
-                'direction' => $direction
-            ]
+                'direction' => $direction,
+            ],
         ]);
     }
 
     public function create()
     {
         return Inertia::render('Products/Create', [
-            'categories' => Category::all()
+            'categories' => Category::all(),
         ]);
     }
 
@@ -63,14 +123,16 @@ class ProductController extends Controller
         ]);
 
         Product::create($validated);
-        return redirect()->route('products.index');
+
+        return redirect()
+            ->route('products.index');
     }
 
     public function edit(Product $product)
     {
         return Inertia::render('Products/Edit', [
             'product' => $product,
-            'categories' => Category::all()
+            'categories' => Category::all(),
         ]);
     }
 
@@ -87,12 +149,16 @@ class ProductController extends Controller
         ]);
 
         $product->update($validated);
-        return redirect()->route('products.index');
+
+        return redirect()
+            ->route('products.index');
     }
 
     public function destroy(Product $product)
     {
-        $product->delete(); // Ini akan melakukan Soft Delete
-        return redirect()->route('products.index');
+        $product->delete();
+
+        return redirect()
+            ->route('products.index');
     }
 }

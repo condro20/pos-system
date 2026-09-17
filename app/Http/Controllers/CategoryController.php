@@ -10,28 +10,65 @@ class CategoryController extends Controller
 {
     public function index(Request $request)
     {
-        $search = $request->input('search');
-        $sort = $request->input('sort', 'id'); // Default urut berdasarkan ID terbaru
-        $direction = $request->input('direction', 'desc');
+        $search = trim((string) $request->input('search', ''));
 
-        // Query data kategori
+        // =========================================================
+        // SORTING
+        // =========================================================
+
+        $allowedSorts = [
+            'id',
+            'name',
+        ];
+
+        $sort = $request->input('sort', 'id');
+
+        if (!in_array($sort, $allowedSorts, true)) {
+            $sort = 'id';
+        }
+
+        $direction = strtolower(
+            $request->input('direction', 'desc')
+        );
+
+        if (!in_array($direction, ['asc', 'desc'], true)) {
+            $direction = 'desc';
+        }
+
+        // =========================================================
+        // QUERY
+        // =========================================================
+
         $query = Category::query()
-            ->when($search, function ($q, $search) {
-                $q->where('name', 'ilike', "%{$search}%");
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(
+                    'name',
+                    'ilike',
+                    "%{$search}%"
+                );
             });
 
-        // Terapkan sorting dan pagination
-        $categories = $query->orderBy($sort, $direction)
+        // =========================================================
+        // SORTING
+        // =========================================================
+
+        $categories = $query
+            ->orderBy($sort, $direction)
             ->paginate(10)
             ->withQueryString();
 
+        // =========================================================
+        // RESPONSE
+        // =========================================================
+
         return Inertia::render('Categories/Index', [
             'categories' => $categories,
+
             'filters' => [
                 'search' => $search,
                 'sort' => $sort,
-                'direction' => $direction
-            ]
+                'direction' => $direction,
+            ],
         ]);
     }
 
@@ -47,13 +84,15 @@ class CategoryController extends Controller
         ]);
 
         Category::create($validated);
-        return redirect()->route('categories.index');
+
+        return redirect()
+            ->route('categories.index');
     }
 
     public function edit(Category $category)
     {
         return Inertia::render('Categories/Edit', [
-            'category' => $category
+            'category' => $category,
         ]);
     }
 
@@ -64,14 +103,16 @@ class CategoryController extends Controller
         ]);
 
         $category->update($validated);
-        return redirect()->route('categories.index');
+
+        return redirect()
+            ->route('categories.index');
     }
 
     public function destroy(Category $category)
     {
-        // Opsional: Anda bisa menambahkan pengecekan di sini agar kategori 
-        // tidak bisa dihapus jika masih ada produk yang memakainya.
         $category->delete();
-        return redirect()->route('categories.index');
+
+        return redirect()
+            ->route('categories.index');
     }
 }
