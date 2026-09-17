@@ -378,7 +378,7 @@ const submitCheckout = async () => {
                     :href="route('pos.history')"
                     class="bg-indigo-600 text-white px-4 py-2 rounded-md font-bold shadow-sm hover:bg-indigo-700 transition text-sm"
                 >
-                    Liat Riwayat & Cetak Ulang Struk
+                    Lihat Riwayat & Cetak Ulang Struk
                 </Link>
             </div>
         </template>

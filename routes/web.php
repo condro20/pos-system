@@ -11,6 +11,7 @@ use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\SettingController;
+use App\Http\Controllers\StockCardDetailController;
 
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -375,6 +376,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 '/reports/stock-card',
                 [ReportController::class, 'stockCard']
             )->name('reports.stock_card');
+
+            Route::get(
+                '/reports/stock-card/detail/{type}/{reference}',
+                [StockCardDetailController::class, 'show']
+            )->name('reports.stock_card.detail');
 
 
             // Top Selling
