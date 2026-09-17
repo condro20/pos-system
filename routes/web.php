@@ -11,14 +11,17 @@ use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\SettingController;
+
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
+
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\Product;
 use App\Models\Customer;
 use App\Models\Supplier;
+
 use Carbon\Carbon;
 use Inertia\Inertia;
 
@@ -44,23 +47,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // ==========================================
         // PENJUALAN HARI INI
-        // Sumber data:
-        // sales + sale_details
         // ==========================================
 
         $salesToday = Sale::with('saleDetails')
             ->whereDate('created_at', $today)
             ->get();
 
-        // Total omzet hari ini
         $revenueToday = $salesToday->sum('grand_total');
 
-        // Jumlah transaksi hari ini
         $transactionsToday = $salesToday->count();
 
         // ==========================================
         // LABA HARI INI
-        // Laba = (harga jual - harga beli) x quantity
         // ==========================================
 
         $profitToday = $salesToday->sum(function ($sale) {
@@ -78,11 +76,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // ==========================================
         // PRODUK TERLARIS HARI INI
-        //
-        // Menggunakan sale_details.quantity
-        // dan sale_details.subtotal
-        //
-        // Jadi sumber datanya sama dengan transaksi POS.
         // ==========================================
 
         $topSellingProducts = SaleDetail::query()
@@ -98,13 +91,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 '=',
                 'sale_details.product_id'
             )
-            ->whereDate('sales.created_at', $today)
+            ->whereDate(
+                'sales.created_at',
+                $today
+            )
             ->select(
                 'products.id',
                 'products.name',
                 'products.unit',
-                DB::raw('SUM(sale_details.quantity) as total_qty'),
-                DB::raw('SUM(sale_details.subtotal) as total_revenue')
+                DB::raw(
+                    'SUM(sale_details.quantity) as total_qty'
+                ),
+                DB::raw(
+                    'SUM(sale_details.subtotal) as total_revenue'
+                )
             )
             ->groupBy(
                 'products.id',
@@ -120,19 +120,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
                     'id' => $product->id,
                     'name' => $product->name,
                     'unit' => $product->unit,
-                    'total_qty' => (float) $product->total_qty,
-                    'total_revenue' => (float) $product->total_revenue,
+                    'total_qty' =>
+                        (float) $product->total_qty,
+                    'total_revenue' =>
+                        (float) $product->total_revenue,
                 ];
 
             });
 
         // ==========================================
         // STOK MENIPIS
-        //
-        // Mengambil stock aktual dari products.stock
         // ==========================================
 
-        $lowStockProducts = Product::where('stock', '<=', 10)
+        $lowStockProducts = Product::where(
+            'stock',
+            '<=',
+            10
+        )
             ->orderBy('stock', 'asc')
             ->take(5)
             ->get();
@@ -155,69 +159,94 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 $date
             )->sum('grand_total');
 
-            $chartData['labels'][] = $date->format('d M');
+            $chartData['labels'][] =
+                $date->format('d M');
 
-            $chartData['data'][] = (float) $total;
+            $chartData['data'][] =
+                (float) $total;
         }
-
-        // ==========================================
-        // KIRIM DATA KE DASHBOARD
-        // ==========================================
 
         return Inertia::render('Dashboard', [
 
             'summary' => [
 
-                'revenue_today' => (float) $revenueToday,
+                'revenue_today' =>
+                    (float) $revenueToday,
 
-                'profit_today' => (float) $profitToday,
+                'profit_today' =>
+                    (float) $profitToday,
 
-                'transactions_today' => $transactionsToday,
+                'transactions_today' =>
+                    $transactionsToday,
 
-                'total_products' => Product::count(),
+                'total_products' =>
+                    Product::count(),
 
-                'total_customers' => Customer::count(),
+                'total_customers' =>
+                    Customer::count(),
 
-                'total_suppliers' => Supplier::count(),
+                'total_suppliers' =>
+                    Supplier::count(),
 
             ],
 
-            'top_selling_products' => $topSellingProducts,
+            'top_selling_products' =>
+                $topSellingProducts,
 
-            'low_stock_products' => $lowStockProducts,
+            'low_stock_products' =>
+                $lowStockProducts,
 
-            'chart_data' => $chartData,
+            'chart_data' =>
+                $chartData,
 
         ]);
 
     })->name('dashboard');
 
 
-    Route::get('/profile', [ProfileController::class, 'edit'])
-        ->name('profile.edit');
+    // ==========================================
+    // PROFILE
+    // ==========================================
 
-    Route::patch('/profile', [ProfileController::class, 'update'])
-        ->name('profile.update');
+    Route::get(
+        '/profile',
+        [ProfileController::class, 'edit']
+    )->name('profile.edit');
 
-    Route::delete('/profile', [ProfileController::class, 'destroy'])
-        ->name('profile.destroy');
+    Route::patch(
+        '/profile',
+        [ProfileController::class, 'update']
+    )->name('profile.update');
+
+    Route::delete(
+        '/profile',
+        [ProfileController::class, 'destroy']
+    )->name('profile.destroy');
 
 
     // ==========================================
     // TRANSAKSI KASIR
     // ==========================================
 
-    Route::get('/pos', [PosController::class, 'index'])
-        ->name('pos.index');
+    Route::get(
+        '/pos',
+        [PosController::class, 'index']
+    )->name('pos.index');
 
-    Route::post('/pos', [PosController::class, 'store'])
-        ->name('pos.store');
+    Route::post(
+        '/pos',
+        [PosController::class, 'store']
+    )->name('pos.store');
 
-    Route::get('/pos/receipt/{sale}', [PosController::class, 'receipt'])
-        ->name('pos.receipt');
+    Route::get(
+        '/pos/receipt/{sale}',
+        [PosController::class, 'receipt']
+    )->name('pos.receipt');
 
-    Route::get('/pos/history', [PosController::class, 'history'])
-        ->name('pos.history');
+    Route::get(
+        '/pos/history',
+        [PosController::class, 'history']
+    )->name('pos.history');
 
 
     // ==========================================
@@ -241,83 +270,140 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 
     // ==========================================
-    // 2. HANYA OWNER & MANAGER
+    // 2. OWNER & MANAGER
     // ==========================================
 
-    Route::middleware('role:owner,manager')->group(function () {
+    Route::middleware('role:owner,manager')->group(
+        function () {
 
-        // Products
-        Route::resource('products', ProductController::class)
-            ->except(['index']);
+            // ==========================================
+            // PRODUCTS
+            // ==========================================
 
-        // Categories
-        Route::resource('categories', CategoryController::class)
-            ->except(['index']);
+            Route::resource(
+                'products',
+                ProductController::class
+            )->except(['index']);
 
-        // Customers
-        Route::resource('customers', CustomerController::class)
-            ->except(['index']);
 
-        // Suppliers
-        Route::resource('suppliers', SupplierController::class);
+            // ==========================================
+            // CATEGORIES
+            // ==========================================
 
-        // Stock Adjustment
-        Route::resource(
-            'stock-adjustments',
-            StockAdjustmentController::class
-        )->only([
-            'index',
-            'create',
-            'store'
-        ]);
+            Route::resource(
+                'categories',
+                CategoryController::class
+            )->except(['index']);
 
-        // Purchases
-        Route::resource(
-            'purchases',
-            PurchaseController::class
-        )->only([
-            'index',
-            'create',
-            'store'
-        ]);
 
-    });
+            // ==========================================
+            // CUSTOMERS
+            // ==========================================
+
+            Route::resource(
+                'customers',
+                CustomerController::class
+            )->except(['index']);
+
+
+            // ==========================================
+            // SUPPLIERS
+            // ==========================================
+
+            Route::resource(
+                'suppliers',
+                SupplierController::class
+            );
+
+
+            // ==========================================
+            // STOCK ADJUSTMENT
+            // ==========================================
+
+            Route::resource(
+                'stock-adjustments',
+                StockAdjustmentController::class
+            )->only([
+                'index',
+                'create',
+                'store',
+            ]);
+
+
+            // ==========================================
+            // PURCHASE
+            // ==========================================
+
+            Route::resource(
+                'purchases',
+                PurchaseController::class
+            )->only([
+                'index',
+                'create',
+                'store',
+            ]);
+
+            // ==========================================
+            // PRINT PURCHASE ORDER
+            // ==========================================
+
+            Route::get(
+                'purchases/{purchase}/print',
+                [PurchaseController::class, 'print']
+            )->name('purchases.print');
+
+        }
+    );
 
 
     // ==========================================
-    // 3. HANYA OWNER
+    // 3. OWNER ONLY
     // ==========================================
 
-    Route::middleware('role:owner')->group(function () {
+    Route::middleware('role:owner')->group(
+        function () {
 
-        Route::get(
-            '/reports/sales',
-            [ReportController::class, 'sales']
-        )->name('reports.sales');
+            // Sales Report
+            Route::get(
+                '/reports/sales',
+                [ReportController::class, 'sales']
+            )->name('reports.sales');
 
-        Route::get(
-            '/reports/stock-card',
-            [ReportController::class, 'stockCard']
-        )->name('reports.stock_card');
 
-        Route::get(
-            '/reports/top-selling',
-            [ReportController::class, 'topSelling']
-        )->name('reports.top_selling');
+            // Stock Card
+            Route::get(
+                '/reports/stock-card',
+                [ReportController::class, 'stockCard']
+            )->name('reports.stock_card');
 
-        Route::resource('users', UserController::class);
 
-        Route::get(
-            '/settings',
-            [SettingController::class, 'index']
-        )->name('settings.index');
+            // Top Selling
+            Route::get(
+                '/reports/top-selling',
+                [ReportController::class, 'topSelling']
+            )->name('reports.top_selling');
 
-        Route::post(
-            '/settings',
-            [SettingController::class, 'update']
-        )->name('settings.update');
 
-    });
+            // Users
+            Route::resource(
+                'users',
+                UserController::class
+            );
+
+
+            // Settings
+            Route::get(
+                '/settings',
+                [SettingController::class, 'index']
+            )->name('settings.index');
+
+            Route::post(
+                '/settings',
+                [SettingController::class, 'update']
+            )->name('settings.update');
+
+        }
+    );
 
 });
 
