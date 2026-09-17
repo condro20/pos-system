@@ -350,8 +350,22 @@ const adjustmentPrefix = (value) => {
                                 </th>
 
 
-                                <th class="p-3">
+                                <th
+                                    class="p-3 cursor-pointer hover:bg-gray-200 transition select-none"
+                                    @click="sortBy('id')"
+                                >
                                     No. Adjustment
+
+                                    <span
+                                        v-if="sortField === 'id'"
+                                        class="text-indigo-600 ml-1"
+                                    >
+                                        {{
+                                            sortDirection === 'asc'
+                                                ? '↑'
+                                                : '↓'
+                                        }}
+                                    </span>
                                 </th>
 
 
@@ -440,16 +454,40 @@ const adjustmentPrefix = (value) => {
 
 
                                 <th
-                                    class="p-3"
+                                    class="p-3 cursor-pointer hover:bg-gray-200 transition select-none"
+                                    @click="sortBy('reason')"
                                 >
                                     Alasan
+
+                                    <span
+                                        v-if="sortField === 'reason'"
+                                        class="text-indigo-600 ml-1"
+                                    >
+                                        {{
+                                            sortDirection === 'asc'
+                                                ? '↑'
+                                                : '↓'
+                                        }}
+                                    </span>
                                 </th>
 
 
                                 <th
-                                    class="p-3"
+                                    class="p-3 cursor-pointer hover:bg-gray-200 transition select-none"
+                                    @click="sortBy('user')"
                                 >
                                     Dilakukan Oleh
+
+                                    <span
+                                        v-if="sortField === 'user'"
+                                        class="text-indigo-600 ml-1"
+                                    >
+                                        {{
+                                            sortDirection === 'asc'
+                                                ? '↑'
+                                                : '↓'
+                                        }}
+                                    </span>
                                 </th>
 
                             </tr>

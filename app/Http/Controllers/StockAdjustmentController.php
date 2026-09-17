@@ -26,11 +26,14 @@ class StockAdjustmentController extends Controller
         | Jangan langsung memasukkan input user ke orderBy.
         */
         $allowedSorts = [
+            'id',
             'created_at',
             'system_stock',
             'physical_stock',
             'adjustment',
             'reason',
+            'product',
+            'user',
         ];
 
         $sort = $request->input('sort', 'created_at');
