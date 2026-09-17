@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Sale;
 use App\Models\Product;
+use App\Models\StockAdjustment;
 use Inertia\Inertia;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -90,120 +91,311 @@ class ReportController extends Controller
 
     public function stockCard(Request $request)
     {
-        $products = \App\Models\Product::orderBy('name')->get();
-        
-        // Tangkap parameter filter & fitur
-        $selectedProductId = $request->input('product_id');
-        $startDate = $request->input('start_date', \Carbon\Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $endDate = $request->input('end_date', \Carbon\Carbon::now()->endOfMonth()->format('Y-m-d'));
-        $search = $request->input('search');
-        $sort = $request->input('sort', 'date');
-        $direction = $request->input('direction', 'desc');
+        $products = Product::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get([
+                'id',
+                'barcode',
+                'name',
+                'unit',
+                'stock',
+            ]);
 
-        $movements = collect();
         $selectedProduct = null;
+        $movements = collect();
 
-        if ($selectedProductId) {
-            $selectedProduct = \App\Models\Product::find($selectedProductId);
+        $productId = $request->integer('product_id');
+        $startDate = $request->input('start_date');
+        $endDate = $request->input('end_date');
 
-            // 1. Ambil Penjualan (Keluar)
-            $sales = \Illuminate\Support\Facades\DB::table('sale_details')
-                ->join('sales', 'sale_details.sale_id', '=', 'sales.id')
-                ->where('sale_details.product_id', $selectedProductId)
-                ->whereBetween('sales.created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-                ->select('sales.created_at as date', 'sales.invoice_no as reference', 'sale_details.quantity as out')
-                ->get()->map(function($item) {
-                    return [
-                        'date' => $item->date,
-                        'type' => 'Penjualan (Kasir)',
-                        'reference' => $item->reference,
-                        'in' => 0,
-                        'out' => (float) $item->out,
-                        'description' => 'Terjual ke pelanggan'
-                    ];
-                });
+        if ($productId && $startDate && $endDate) {
+            $selectedProduct = Product::find($productId);
 
-            // 2. Ambil Pembelian (Masuk)
-            $purchases = \Illuminate\Support\Facades\DB::table('purchase_details')
-                ->join('purchases', 'purchase_details.purchase_id', '=', 'purchases.id')
-                ->leftJoin('suppliers', 'purchases.supplier_id', '=', 'suppliers.id')
-                ->where('purchase_details.product_id', $selectedProductId)
-                ->whereBetween('purchases.created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-                ->select('purchases.created_at as date', 'purchases.invoice_no as reference', 'purchase_details.quantity as in', 'suppliers.name as supplier')
-                ->get()->map(function($item) {
-                    return [
-                        'date' => $item->date,
-                        'type' => 'Pembelian (Restock)',
-                        'reference' => $item->reference,
-                        'in' => (float) $item->in,
+            if ($selectedProduct) {
+                /*
+                * ==========================================================
+                * 1. AMBIL TRANSAKSI DALAM PERIODE
+                * ==========================================================
+                */
+
+                // PENJUALAN / POS
+                $sales = DB::table('sale_details')
+                    ->join('sales', 'sales.id', '=', 'sale_details.sale_id')
+                    ->where('sale_details.product_id', $productId)
+                    ->whereBetween('sales.created_at', [
+                        $startDate . ' 00:00:00',
+                        $endDate . ' 23:59:59',
+                    ])
+                    ->orderBy('sales.created_at')
+                    ->get([
+                        'sales.id',
+                        'sales.invoice_no',
+                        'sales.created_at',
+                        'sale_details.quantity',
+                    ]);
+
+                // PEMBELIAN / PURCHASE
+                $purchases = DB::table('purchase_details')
+                    ->join('purchases', 'purchases.id', '=', 'purchase_details.purchase_id')
+                    ->where('purchase_details.product_id', $productId)
+                    ->whereBetween('purchases.created_at', [
+                        $startDate . ' 00:00:00',
+                        $endDate . ' 23:59:59',
+                    ])
+                    ->orderBy('purchases.created_at')
+                    ->get([
+                        'purchases.id',
+                        'purchases.invoice_no',
+                        'purchases.created_at',
+                        'purchase_details.quantity',
+                    ]);
+
+                // STOCK ADJUSTMENT
+                $adjustments = StockAdjustment::query()
+                    ->where('product_id', $productId)
+                    ->whereBetween('created_at', [
+                        $startDate . ' 00:00:00',
+                        $endDate . ' 23:59:59',
+                    ])
+                    ->orderBy('created_at')
+                    ->get([
+                        'id',
+                        'created_at',
+                        'adjustment',
+                        'reason',
+                    ]);
+
+                /*
+                * ==========================================================
+                * 2. HITUNG SALDO HISTORIS
+                *
+                * Karena products.stock adalah stok SEKARANG,
+                * kita perlu mundur dari stok sekarang untuk mendapatkan
+                * stok pada akhir periode yang dipilih.
+                * ==========================================================
+                */
+
+                $currentStock = (float) $selectedProduct->stock;
+
+                // Transaksi setelah end_date
+                $salesAfterEnd = (float) DB::table('sale_details')
+                    ->join('sales', 'sales.id', '=', 'sale_details.sale_id')
+                    ->where('sale_details.product_id', $productId)
+                    ->where('sales.created_at', '>', $endDate . ' 23:59:59')
+                    ->sum('sale_details.quantity');
+
+                $purchasesAfterEnd = (float) DB::table('purchase_details')
+                    ->join('purchases', 'purchases.id', '=', 'purchase_details.purchase_id')
+                    ->where('purchase_details.product_id', $productId)
+                    ->where('purchases.created_at', '>', $endDate . ' 23:59:59')
+                    ->sum('purchase_details.quantity');
+
+                $adjustmentsAfterEnd = (float) StockAdjustment::query()
+                    ->where('product_id', $productId)
+                    ->where('created_at', '>', $endDate . ' 23:59:59')
+                    ->sum('adjustment');
+
+                /*
+                * Stok akhir periode =
+                * stok sekarang
+                * + penjualan setelah periode
+                * - pembelian setelah periode
+                * - adjustment setelah periode
+                */
+                $stockAtEnd = $currentStock
+                    + $salesAfterEnd
+                    - $purchasesAfterEnd
+                    - $adjustmentsAfterEnd;
+
+                /*
+                * ==========================================================
+                * 3. HITUNG SALDO AWAL
+                * ==========================================================
+                */
+
+                $salesBeforeStart = (float) DB::table('sale_details')
+                    ->join('sales', 'sales.id', '=', 'sale_details.sale_id')
+                    ->where('sale_details.product_id', $productId)
+                    ->where('sales.created_at', '<', $startDate . ' 00:00:00')
+                    ->sum('sale_details.quantity');
+
+                $purchasesBeforeStart = (float) DB::table('purchase_details')
+                    ->join('purchases', 'purchases.id', '=', 'purchase_details.purchase_id')
+                    ->where('purchase_details.product_id', $productId)
+                    ->where('purchases.created_at', '<', $startDate . ' 00:00:00')
+                    ->sum('purchase_details.quantity');
+
+                $adjustmentsBeforeStart = (float) StockAdjustment::query()
+                    ->where('product_id', $productId)
+                    ->where('created_at', '<', $startDate . ' 00:00:00')
+                    ->sum('adjustment');
+
+                /*
+                * Saldo awal =
+                * saldo akhir
+                * - pembelian periode
+                * + penjualan periode
+                * - adjustment periode
+                *
+                * Dengan pendekatan ini, saldo awal benar-benar berasal
+                * dari histori transaksi.
+                */
+                $totalPeriodPurchases = (float) $purchases->sum('quantity');
+                $totalPeriodSales = (float) $sales->sum('quantity');
+                $totalPeriodAdjustments = (float) $adjustments->sum('adjustment');
+
+                $openingStock = $stockAtEnd
+                    - $totalPeriodPurchases
+                    + $totalPeriodSales
+                    - $totalPeriodAdjustments;
+
+                /*
+                * ==========================================================
+                * 4. BENTUK MOVEMENT
+                * ==========================================================
+                */
+
+                foreach ($purchases as $purchase) {
+                    $movements->push([
+                        'id' => 'purchase-' . $purchase->id,
+                        'date' => $purchase->created_at,
+                        'type' => 'Pembelian',
+                        'reference' => $purchase->invoice_no ?? '-',
+                        'description' => 'Pembelian / Restock',
+                        'in' => round((float) $purchase->quantity, 3),
                         'out' => 0,
-                        'description' => 'Barang masuk dari ' . ($item->supplier ?? 'Supplier')
-                    ];
-                });
+                        'sort_priority' => 1,
+                    ]);
+                }
 
-            // 3. Ambil Stok Opname
-            $adjustments = \Illuminate\Support\Facades\DB::table('stock_adjustments')
-                ->where('product_id', $selectedProductId)
-                ->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-                ->select('created_at as date', 'id', 'adjustment', 'reason')
-                ->get()->map(function($item) {
-                    return [
-                        'date' => $item->date,
-                        'type' => 'Stok Opname',
-                        'reference' => 'ADJ-' . $item->id,
-                        'in' => $item->adjustment > 0 ? (float) $item->adjustment : 0,
-                        'out' => $item->adjustment < 0 ? abs((float) $item->adjustment) : 0,
-                        'description' => $item->reason
-                    ];
-                });
+                foreach ($sales as $sale) {
+                    $movements->push([
+                        'id' => 'sale-' . $sale->id,
+                        'date' => $sale->created_at,
+                        'type' => 'Penjualan',
+                        'reference' => $sale->invoice_no ?? '-',
+                        'description' => 'Terjual ke pelanggan',
+                        'in' => 0,
+                        'out' => round((float) $sale->quantity, 3),
+                        'sort_priority' => 2,
+                    ]);
+                }
 
-            // Gabungkan semua data
-            $movements = $sales->concat($purchases)->concat($adjustments);
+                foreach ($adjustments as $adjustment) {
+                    $adjustmentValue = round((float) $adjustment->adjustment, 3);
 
-            // Terapkan PENCARIAN (Search) manual pada Collection
-            if ($search) {
-                $searchLower = strtolower($search);
-                $movements = $movements->filter(function ($item) use ($searchLower) {
-                    return str_contains(strtolower($item['reference']), $searchLower) ||
-                           str_contains(strtolower($item['type']), $searchLower) ||
-                           str_contains(strtolower($item['description']), $searchLower);
-                });
+                    $movements->push([
+                        'id' => 'adjustment-' . $adjustment->id,
+                        'date' => $adjustment->created_at,
+                        'type' => 'Penyesuaian',
+                        'reference' => 'ADJ-' . $adjustment->id,
+                        'description' => $adjustment->reason,
+                        'in' => $adjustmentValue > 0 ? $adjustmentValue : 0,
+                        'out' => $adjustmentValue < 0 ? abs($adjustmentValue) : 0,
+                        'sort_priority' => 3,
+                    ]);
+                }
+
+                /*
+                * ==========================================================
+                * 5. URUTKAN SECARA KRONOLOGIS
+                *
+                * Ini penting karena saldo berjalan harus dihitung
+                * berdasarkan urutan waktu, bukan urutan tampilan.
+                * ==========================================================
+                */
+
+                $chronologicalMovements = $movements
+                    ->sort(function ($a, $b) {
+                        $dateCompare = strtotime($a['date']) <=> strtotime($b['date']);
+
+                        if ($dateCompare !== 0) {
+                            return $dateCompare;
+                        }
+
+                        return $a['sort_priority'] <=> $b['sort_priority'];
+                    })
+                    ->values();
+
+                /*
+                * ==========================================================
+                * 6. HITUNG SALDO BERJALAN
+                * ==========================================================
+                */
+
+                $runningBalance = $openingStock;
+
+                $chronologicalMovements = $chronologicalMovements
+                    ->map(function ($movement) use (&$runningBalance) {
+                        $runningBalance += $movement['in'];
+                        $runningBalance -= $movement['out'];
+
+                        $movement['balance'] = round($runningBalance, 3);
+
+                        return $movement;
+                    });
+
+                /*
+                * ==========================================================
+                * 7. TOTAL
+                * ==========================================================
+                */
+
+                $totalIn = round(
+                    $chronologicalMovements->sum('in'),
+                    3
+                );
+
+                $totalOut = round(
+                    $chronologicalMovements->sum('out'),
+                    3
+                );
+
+                $closingStock = round(
+                    $openingStock + $totalIn - $totalOut,
+                    3
+                );
+
+                /*
+                * ==========================================================
+                * 8. DATA UNTUK FRONTEND
+                * ==========================================================
+                */
+
+                $movements = $chronologicalMovements
+                    ->map(function ($movement) {
+                        unset($movement['sort_priority']);
+
+                        return $movement;
+                    })
+                    ->values();
+
+                $selectedProduct = [
+                    'id' => $selectedProduct->id,
+                    'barcode' => $selectedProduct->barcode,
+                    'name' => $selectedProduct->name,
+                    'unit' => $selectedProduct->unit,
+                    'stock' => round((float) $selectedProduct->stock, 3),
+
+                    // Stock historis
+                    'opening_stock' => round($openingStock, 3),
+                    'total_in' => $totalIn,
+                    'total_out' => $totalOut,
+                    'closing_stock' => $closingStock,
+                ];
             }
-
-            // Terapkan PENGURUTAN (Sort) manual pada Collection
-            $isDesc = $direction === 'desc';
-            $movements = $movements->sortBy($sort, SORT_REGULAR, $isDesc)->values();
-
-            // Format tanggal setelah diurutkan
-            $movements = $movements->map(function($m) {
-                $m['date_formatted'] = \Carbon\Carbon::parse($m['date'])->format('d/m/Y H:i');
-                return $m;
-            });
         }
 
-        // Terapkan PAGINATION manual pada Collection
-        $page = \Illuminate\Pagination\Paginator::resolveCurrentPage() ?: 1;
-        $perPage = 15;
-        $paginatedMovements = new \Illuminate\Pagination\LengthAwarePaginator(
-            $movements->forPage($page, $perPage)->values(),
-            $movements->count(),
-            $perPage,
-            $page,
-            ['path' => \Illuminate\Pagination\Paginator::resolveCurrentPath(), 'query' => $request->query()]
-        );
-
-        return \Inertia\Inertia::render('Reports/StockCard', [
+        return Inertia::render('Reports/StockCard', [
             'products' => $products,
-            'movements' => $paginatedMovements,
+            'movements' => $movements,
             'selected_product' => $selectedProduct,
             'filters' => [
-                'product_id' => $selectedProductId,
+                'product_id' => $productId,
                 'start_date' => $startDate,
                 'end_date' => $endDate,
-                'search' => $search,
-                'sort' => $sort,
-                'direction' => $direction
-            ]
+            ],
         ]);
     }
 
