@@ -16,6 +16,12 @@ class Sale extends Model
         'payment_method',
     ];
 
+    protected $casts = [
+        'subtotal' => 'decimal:2',
+        'discount' => 'decimal:2',
+        'grand_total' => 'decimal:2',
+    ];
+
     protected static function booted(): void
     {
         static::deleting(function () {

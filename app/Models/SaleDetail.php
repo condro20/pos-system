@@ -15,6 +15,13 @@ class SaleDetail extends Model
         'subtotal',
     ];
 
+    protected $casts = [
+        'quantity' => 'decimal:3',
+        'purchase_price' => 'decimal:2',
+        'selling_price' => 'decimal:2',
+        'subtotal' => 'decimal:2',
+    ];
+
     protected static function booted(): void
     {
         static::deleting(function () {

@@ -13,6 +13,10 @@ class Purchase extends Model
         'grand_total',
     ];
 
+    protected $casts = [
+        'grand_total' => 'decimal:2',
+    ];
+
     protected static function booted(): void
     {
         static::deleting(function () {

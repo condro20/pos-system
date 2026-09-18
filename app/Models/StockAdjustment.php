@@ -15,21 +15,17 @@ class StockAdjustment extends Model
         'reason',
     ];
 
+    protected $casts = [
+        'system_stock' => 'decimal:3',
+        'physical_stock' => 'decimal:3',
+        'adjustment' => 'decimal:3',
+    ];
+
     protected static function booted(): void
     {
-        /*
-        |--------------------------------------------------------------------------
-        | VALIDASI SAAT MEMBUAT ADJUSTMENT
-        |--------------------------------------------------------------------------
-        |
-        | adjustment harus selalu:
-        |
-        | physical_stock - system_stock
-        |
-        */
-
-        static::creating(function (StockAdjustment $adjustment) {
-
+        static::creating(function (
+            StockAdjustment $adjustment
+        ) {
             $systemStock = round(
                 (float) $adjustment->system_stock,
                 3
@@ -62,30 +58,23 @@ class StockAdjustment extends Model
                 );
             }
 
-            if (abs($actualAdjustment - $expectedAdjustment) > 0.0005) {
+            if (
+                abs(
+                    $actualAdjustment -
+                    $expectedAdjustment
+                ) > 0.0005
+            ) {
                 throw new \LogicException(
                     'Nilai adjustment tidak sesuai dengan system_stock dan physical_stock.'
                 );
             }
         });
 
-        /*
-        |--------------------------------------------------------------------------
-        | ADJUSTMENT TIDAK BOLEH DIUBAH
-        |--------------------------------------------------------------------------
-        */
-
         static::updating(function () {
             throw new \LogicException(
                 'Stock Adjustment tidak boleh diubah. Buat adjustment baru jika terjadi koreksi.'
             );
         });
-
-        /*
-        |--------------------------------------------------------------------------
-        | ADJUSTMENT TIDAK BOLEH DIHAPUS
-        |--------------------------------------------------------------------------
-        */
 
         static::deleting(function () {
             throw new \LogicException(

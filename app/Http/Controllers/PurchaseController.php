@@ -114,7 +114,6 @@ class PurchaseController extends Controller
     {
         return Inertia::render('Purchases/Create', [
             'suppliers' => Supplier::orderBy('name')->get(),
-
             'products' => Product::orderBy('name')->get(),
         ]);
     }
@@ -123,10 +122,13 @@ class PurchaseController extends Controller
      * Menyimpan Purchase.
      *
      * Proteksi:
+     * - validasi quantity dan harga
+     * - normalisasi duplicate product
      * - nomor PO concurrency-safe
      * - product row lock
      * - deterministic lock ordering
      * - atomic stock + header + detail
+     * - header/detail reconciliation
      * - deadlock retry
      */
     public function store(
@@ -155,13 +157,15 @@ class PurchaseController extends Controller
             'items.*.qty' => [
                 'required',
                 'numeric',
-                'min:0.01',
+                'gt:0',
+                'decimal:0,3',
             ],
 
             'items.*.price' => [
                 'required',
                 'numeric',
                 'min:0',
+                'decimal:0,2',
             ],
         ]);
 
@@ -173,25 +177,49 @@ class PurchaseController extends Controller
                 ) {
                     /*
                      * ======================================================
-                     * NORMALISASI URUTAN ITEM
+                     * NORMALISASI ITEM
                      * ======================================================
                      *
-                     * Semua product di-lock dengan urutan ID yang sama.
+                     * Jika product yang sama dikirim lebih dari sekali,
+                     * quantity digabung menjadi satu baris.
+                     *
+                     * Harga terakhir digunakan.
                      */
                     $items = collect($validated['items'])
+                        ->groupBy('product_id')
+                        ->map(function ($productItems, $productId) {
+                            $totalQty = $productItems->sum(
+                                fn ($item) => (float) $item['qty']
+                            );
+
+                            $lastItem = $productItems->last();
+
+                            return [
+                                'product_id' => (int) $productId,
+                                'qty' => round(
+                                    $totalQty,
+                                    3
+                                ),
+                                'price' => round(
+                                    (float) $lastItem['price'],
+                                    2
+                                ),
+                            ];
+                        })
                         ->sortBy('product_id')
                         ->values()
                         ->all();
+
+                    if (empty($items)) {
+                        throw new \RuntimeException(
+                            'Item pembelian tidak boleh kosong.'
+                        );
+                    }
 
                     /*
                      * ======================================================
                      * GENERATE NOMOR PO
                      * ======================================================
-                     *
-                     * Sequence berada di dalam transaction.
-                     *
-                     * Jika Purchase gagal:
-                     * sequence ikut rollback.
                      */
                     $invoiceNo = $transactionNumberService->generate(
                         'purchase'
@@ -245,7 +273,10 @@ class PurchaseController extends Controller
                             2
                         );
 
-                        $grandTotal += $subtotal;
+                        $grandTotal = round(
+                            $grandTotal + $subtotal,
+                            2
+                        );
 
                         $purchaseDetails[] = [
                             'product_id' => $product->id,
@@ -255,20 +286,24 @@ class PurchaseController extends Controller
                         ];
 
                         /*
-                         * Purchase = stok bertambah.
+                         * ==================================================
+                         * UPDATE STOCK
+                         * ==================================================
                          */
                         $currentStock = round(
                             (float) $product->stock,
                             3
                         );
 
-                        $product->stock = round(
+                        $newStock = round(
                             $currentStock + $qty,
                             3
                         );
 
+                        $product->stock = $newStock;
+
                         /*
-                         * Simpan harga beli terakhir.
+                         * Harga beli terakhir.
                          */
                         $product->purchase_price = $price;
 
@@ -280,14 +315,16 @@ class PurchaseController extends Controller
                      * CREATE PURCHASE HEADER
                      * ======================================================
                      */
+                    $grandTotal = round(
+                        $grandTotal,
+                        2
+                    );
+
                     $purchase = Purchase::create([
                         'invoice_no' => $invoiceNo,
                         'user_id' => Auth::id(),
                         'supplier_id' => $validated['supplier_id'],
-                        'grand_total' => round(
-                            $grandTotal,
-                            2
-                        ),
+                        'grand_total' => $grandTotal,
                     ]);
 
                     /*
@@ -299,6 +336,47 @@ class PurchaseController extends Controller
                         ->createMany(
                             $purchaseDetails
                         );
+
+                    /*
+                     * ======================================================
+                     * RECONCILIATION HEADER ↔ DETAIL
+                     * ======================================================
+                     *
+                     * Pastikan:
+                     *
+                     * SUM(detail.subtotal)
+                     * =
+                     * purchase.grand_total
+                     */
+                    $detailSubtotalCents = (int) round(
+                        (float) $purchase
+                            ->purchaseDetails()
+                            ->sum('subtotal') * 100
+                    );
+
+                    $headerTotalCents = (int) round(
+                        $grandTotal * 100
+                    );
+
+                    if ($detailSubtotalCents !== $headerTotalCents) {
+                        throw new \RuntimeException(
+                            'Total Purchase tidak konsisten dengan detail Purchase.'
+                        );
+                    }
+
+                    /*
+                     * Pastikan nilai header juga sesuai dengan
+                     * nilai yang dihitung controller.
+                     */
+                    $storedTotalCents = (int) round(
+                        (float) $purchase->grand_total * 100
+                    );
+
+                    if ($storedTotalCents !== $headerTotalCents) {
+                        throw new \RuntimeException(
+                            'Grand total Purchase tidak konsisten.'
+                        );
+                    }
 
                     return $purchase;
                 },
