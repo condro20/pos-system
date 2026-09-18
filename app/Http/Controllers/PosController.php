@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\Sale;
+use App\Services\TransactionNumberService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -33,31 +34,21 @@ class PosController extends Controller
     /**
      * Memproses checkout POS.
      *
-     * Alur:
-     * 1. Validasi request
-     * 2. Mulai database transaction
-     * 3. Generate invoice
-     * 4. Lock product
-     * 5. Cek stok
-     * 6. Ambil harga dari database
-     * 7. Hitung subtotal
-     * 8. Kurangi stok
-     * 9. Buat Sale
-     * 10. Buat SaleDetail
-     * 11. Commit transaction
+     * Proteksi:
+     * - validasi request
+     * - database transaction
+     * - transaction number concurrency-safe
+     * - product row lock
+     * - deterministic lock ordering
+     * - stock validation setelah lock
+     * - historical price
+     * - atomic header + detail
+     * - deadlock retry
      */
-    public function store(Request $request)
-    {
-        /**
-         * Validasi input dari frontend.
-         *
-         * Frontend hanya perlu mengirim:
-         * - product_id
-         * - qty
-         * - payment_method
-         *
-         * Harga TIDAK dipercayakan kepada frontend.
-         */
+    public function store(
+        Request $request,
+        TransactionNumberService $transactionNumberService
+    ) {
         $validated = $request->validate([
             'items' => [
                 'required',
@@ -85,96 +76,104 @@ class PosController extends Controller
         ]);
 
         try {
-            $sale = DB::transaction(function () use ($validated) {
+            $sale = DB::transaction(function () use (
+                $validated,
+                $transactionNumberService
+            ) {
+                /*
+                 * ==========================================================
+                 * NORMALISASI URUTAN ITEM
+                 * ==========================================================
+                 *
+                 * Semua transaction akan mengunci product berdasarkan
+                 * product_id dari kecil ke besar.
+                 *
+                 * Ini mengurangi kemungkinan deadlock:
+                 *
+                 * Transaction A:
+                 * product 1 -> product 2
+                 *
+                 * Transaction B:
+                 * product 2 -> product 1
+                 *
+                 * Dengan sorting:
+                 *
+                 * A: 1 -> 2
+                 * B: 1 -> 2
+                 */
+                $items = collect($validated['items'])
+                    ->sortBy('product_id')
+                    ->values()
+                    ->all();
 
                 /*
-                 * Generate nomor invoice.
+                 * ==========================================================
+                 * GENERATE NOMOR INVOICE
+                 * ==========================================================
                  *
-                 * Contoh:
-                 * INV-20260916-0001
-                 * INV-20260916-0002
+                 * Nomor dibuat di dalam transaction.
+                 *
+                 * Jika transaction gagal:
+                 * sequence juga rollback.
+                 *
+                 * Artinya nomor tidak akan "loncat" karena transaction
+                 * yang gagal.
                  */
-                $datePrefix = now()->format('Ymd');
-
-                $lastSale = Sale::query()
-                    ->where(
-                        'invoice_no',
-                        'like',
-                        "INV-{$datePrefix}-%"
-                    )
-                    ->orderByDesc('id')
-                    ->first();
-
-                $sequence = $lastSale
-                    ? ((int) substr($lastSale->invoice_no, -4)) + 1
-                    : 1;
-
-                $invoiceNo = 'INV-' .
-                    $datePrefix .
-                    '-' .
-                    str_pad(
-                        $sequence,
-                        4,
-                        '0',
-                        STR_PAD_LEFT
-                    );
+                $invoiceNo = $transactionNumberService->generate(
+                    'sale'
+                );
 
                 $grandTotal = 0.00;
+
                 $saleDetails = [];
 
-                /**
-                 * Proses setiap item cart.
+                /*
+                 * ==========================================================
+                 * LOCK + VALIDASI + UPDATE STOK
+                 * ==========================================================
                  */
-                foreach ($validated['items'] as $item) {
-
-                    /**
-                     * Lock row product selama transaction berlangsung.
-                     *
-                     * Ini mencegah dua transaksi secara bersamaan
-                     * menggunakan stok yang sama.
-                     */
+                foreach ($items as $item) {
                     $product = Product::query()
                         ->whereKey($item['product_id'])
                         ->lockForUpdate()
                         ->first();
 
-                    /**
-                     * Secara teori tidak null karena sudah divalidasi
-                     * dengan exists:products,id.
-                     *
-                     * Tetapi tetap dicek untuk keamanan.
-                     */
                     if (!$product) {
                         throw new \RuntimeException(
                             'Produk tidak ditemukan.'
                         );
                     }
 
-                    /**
-                     * Cast quantity dan nilai database
-                     * ke tipe numerik yang konsisten.
-                     */
-                    $qty = (float) $item['qty'];
+                    $qty = round(
+                        (float) $item['qty'],
+                        3
+                    );
 
-                    $stock = (float) $product->stock;
+                    $stock = round(
+                        (float) $product->stock,
+                        3
+                    );
 
-                    $purchasePrice = (float) $product->purchase_price;
+                    $purchasePrice = round(
+                        (float) $product->purchase_price,
+                        2
+                    );
 
-                    $sellingPrice = (float) $product->selling_price;
+                    $sellingPrice = round(
+                        (float) $product->selling_price,
+                        2
+                    );
 
-                    /**
-                     * Validasi quantity.
-                     */
                     if ($qty <= 0) {
                         throw new \RuntimeException(
                             "Jumlah produk {$product->name} harus lebih dari 0."
                         );
                     }
 
-                    /**
-                     * Validasi stok SETELAH lockForUpdate().
+                    /*
+                     * PENTING:
                      *
-                     * Ini penting untuk mencegah stok menjadi negatif.
+                     * Pengecekan stok dilakukan SETELAH lockForUpdate().
                      */
                     if ($stock < $qty) {
                         throw new \RuntimeException(
@@ -184,12 +183,6 @@ class PosController extends Controller
                         );
                     }
 
-                    /**
-                     * Hitung subtotal menggunakan harga
-                     * yang berasal dari database.
-                     *
-                     * Harga dari frontend tidak digunakan.
-                     */
                     $subtotal = round(
                         $qty * $sellingPrice,
                         2
@@ -197,32 +190,19 @@ class PosController extends Controller
 
                     $grandTotal += $subtotal;
 
-                    /**
-                     * Simpan harga historis transaksi.
-                     *
-                     * Walaupun harga produk berubah nanti,
-                     * transaksi lama tetap menggunakan harga
-                     * saat transaksi terjadi.
+                    /*
+                     * Simpan harga historis.
                      */
                     $saleDetails[] = [
                         'product_id' => $product->id,
-                        'quantity' => round($qty, 3),
-                        'purchase_price' => round(
-                            $purchasePrice,
-                            2
-                        ),
-                        'selling_price' => round(
-                            $sellingPrice,
-                            2
-                        ),
+                        'quantity' => $qty,
+                        'purchase_price' => $purchasePrice,
+                        'selling_price' => $sellingPrice,
                         'subtotal' => $subtotal,
                     ];
 
-                    /**
+                    /*
                      * Kurangi stok.
-                     *
-                     * Dibulatkan 3 angka karena database:
-                     * DECIMAL(10,3)
                      */
                     $product->stock = round(
                         $stock - $qty,
@@ -232,14 +212,15 @@ class PosController extends Controller
                     $product->save();
                 }
 
-                /**
-                 * Pastikan total akhir memiliki
-                 * maksimal 2 angka desimal.
-                 */
-                $grandTotal = round($grandTotal, 2);
+                $grandTotal = round(
+                    $grandTotal,
+                    2
+                );
 
-                /**
-                 * Buat header transaksi.
+                /*
+                 * ==========================================================
+                 * CREATE SALE HEADER
+                 * ==========================================================
                  */
                 $sale = Sale::create([
                     'invoice_no' => $invoiceNo,
@@ -251,23 +232,26 @@ class PosController extends Controller
                     'payment_method' => $validated['payment_method'],
                 ]);
 
-                /**
-                 * Buat detail transaksi.
+                /*
+                 * ==========================================================
+                 * CREATE SALE DETAILS
+                 * ==========================================================
                  */
                 $sale->saleDetails()->createMany(
                     $saleDetails
                 );
 
-                /**
-                 * DB::transaction() otomatis melakukan commit
-                 * apabila seluruh proses berhasil.
+                /*
+                 * Jika seluruh proses berhasil:
+                 *
+                 * - sequence commit
+                 * - stock commit
+                 * - sale commit
+                 * - details commit
                  */
                 return $sale;
-            });
+            }, 5);
 
-            /**
-             * Response sukses untuk frontend.
-             */
             return response()->json([
                 'success' => true,
                 'message' => 'Transaksi berhasil.',
@@ -276,14 +260,7 @@ class PosController extends Controller
                     $sale->id
                 ),
             ]);
-
         } catch (\Throwable $e) {
-
-            /**
-             * DB::transaction() otomatis rollback
-             * apabila terjadi exception.
-             */
-
             Log::error('POS checkout gagal', [
                 'user_id' => Auth::id(),
                 'error' => $e->getMessage(),
@@ -318,10 +295,6 @@ class PosController extends Controller
     {
         $search = $request->input('search');
 
-        /**
-         * Whitelist kolom sorting agar input user
-         * tidak dapat digunakan sebagai SQL column arbitrary.
-         */
         $allowedSorts = [
             'created_at',
             'invoice_no',
@@ -339,9 +312,6 @@ class PosController extends Controller
             $sort = 'created_at';
         }
 
-        /**
-         * Whitelist arah sorting.
-         */
         $allowedDirections = [
             'asc',
             'desc',
@@ -358,9 +328,6 @@ class PosController extends Controller
             $direction = 'desc';
         }
 
-        /**
-         * Query transaksi.
-         */
         $query = Sale::query()
             ->with([
                 'user',
@@ -374,9 +341,6 @@ class PosController extends Controller
                 'users.id'
             );
 
-        /**
-         * Search invoice atau nama kasir.
-         */
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where(
@@ -391,9 +355,6 @@ class PosController extends Controller
             });
         }
 
-        /**
-         * Sorting.
-         */
         if ($sort === 'cashier') {
             $query->orderBy(
                 'users.name',
@@ -406,9 +367,6 @@ class PosController extends Controller
             );
         }
 
-        /**
-         * Pagination.
-         */
         $sales = $query
             ->paginate(15)
             ->withQueryString();

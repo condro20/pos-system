@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\Purchase;
+use App\Services\TransactionNumberService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,9 @@ class PurchaseController extends Controller
      */
     public function index(Request $request)
     {
-        $search = trim($request->input('search', ''));
+        $search = trim(
+            $request->input('search', '')
+        );
 
         $allowedSorts = [
             'created_at',
@@ -27,13 +30,21 @@ class PurchaseController extends Controller
             'supplier',
         ];
 
-        $sort = $request->input('sort', 'created_at');
+        $sort = $request->input(
+            'sort',
+            'created_at'
+        );
 
         if (!in_array($sort, $allowedSorts, true)) {
             $sort = 'created_at';
         }
 
-        $direction = strtolower($request->input('direction', 'desc'));
+        $direction = strtolower(
+            $request->input(
+                'direction',
+                'desc'
+            )
+        );
 
         if (!in_array($direction, ['asc', 'desc'], true)) {
             $direction = 'desc';
@@ -51,23 +62,29 @@ class PurchaseController extends Controller
                 '=',
                 'suppliers.id'
             )
-            ->when($search !== '', function ($query) use ($search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where(
-                        'purchases.invoice_no',
-                        'ilike',
-                        '%' . $search . '%'
-                    )
-                    ->orWhere(
-                        'suppliers.name',
-                        'ilike',
-                        '%' . $search . '%'
-                    );
-                });
-            });
+            ->when(
+                $search !== '',
+                function ($query) use ($search) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where(
+                            'purchases.invoice_no',
+                            'ilike',
+                            '%' . $search . '%'
+                        )
+                        ->orWhere(
+                            'suppliers.name',
+                            'ilike',
+                            '%' . $search . '%'
+                        );
+                    });
+                }
+            );
 
         if ($sort === 'supplier') {
-            $query->orderBy('suppliers.name', $direction);
+            $query->orderBy(
+                'suppliers.name',
+                $direction
+            );
         } else {
             $query->orderBy(
                 'purchases.' . $sort,
@@ -105,15 +122,17 @@ class PurchaseController extends Controller
     /**
      * Menyimpan Purchase.
      *
-     * Purchase:
-     * - membuat nomor PO
-     * - membuat Purchase
-     * - membuat PurchaseDetail
-     * - menambah stok
-     * - memperbarui harga beli terakhir
+     * Proteksi:
+     * - nomor PO concurrency-safe
+     * - product row lock
+     * - deterministic lock ordering
+     * - atomic stock + header + detail
+     * - deadlock retry
      */
-    public function store(Request $request)
-    {
+    public function store(
+        Request $request,
+        TransactionNumberService $transactionNumberService
+    ) {
         $validated = $request->validate([
             'supplier_id' => [
                 'required',
@@ -147,165 +166,144 @@ class PurchaseController extends Controller
         ]);
 
         try {
-            $purchase = DB::transaction(function () use ($validated) {
-
-                /*
-                 * ==========================================
-                 * GENERATE NOMOR PO
-                 * Format:
-                 *
-                 * PO-YYYYMMDD-0001
-                 * ==========================================
-                 */
-
-                $datePrefix = now()->format('Ymd');
-
-                $lastPurchase = Purchase::where(
-                    'invoice_no',
-                    'like',
-                    "PO-{$datePrefix}-%"
-                )
-                    ->orderByDesc('id')
-                    ->lockForUpdate()
-                    ->first();
-
-                $sequence = 1;
-
-                if ($lastPurchase) {
-                    $sequence =
-                        ((int) substr(
-                            $lastPurchase->invoice_no,
-                            -4
-                        )) + 1;
-                }
-
-                $invoiceNo =
-                    'PO-' .
-                    $datePrefix .
-                    '-' .
-                    str_pad(
-                        $sequence,
-                        4,
-                        '0',
-                        STR_PAD_LEFT
-                    );
-
-                /*
-                 * ==========================================
-                 * PROSES ITEM
-                 * ==========================================
-                 */
-
-                $grandTotal = 0;
-
-                $purchaseDetails = [];
-
-                foreach ($validated['items'] as $item) {
-
-                    $product = Product::where(
-                        'id',
-                        $item['product_id']
-                    )
-                        ->lockForUpdate()
-                        ->first();
-
-                    if (!$product) {
-                        throw new \RuntimeException(
-                            'Produk tidak ditemukan.'
-                        );
-                    }
-
-                    $qty = round(
-                        (float) $item['qty'],
-                        3
-                    );
-
-                    $price = round(
-                        (float) $item['price'],
-                        2
-                    );
-
-                    if ($qty <= 0) {
-                        throw new \RuntimeException(
-                            "Quantity produk {$product->name} harus lebih dari 0."
-                        );
-                    }
-
-                    if ($price < 0) {
-                        throw new \RuntimeException(
-                            "Harga beli produk {$product->name} tidak valid."
-                        );
-                    }
-
-                    $subtotal = round(
-                        $qty * $price,
-                        2
-                    );
-
-                    $grandTotal += $subtotal;
-
+            $purchase = DB::transaction(
+                function () use (
+                    $validated,
+                    $transactionNumberService
+                ) {
                     /*
-                     * Simpan detail Purchase
-                     */
-                    $purchaseDetails[] = [
-                        'product_id' => $product->id,
-                        'quantity' => $qty,
-                        'price' => $price,
-                        'subtotal' => $subtotal,
-                    ];
-
-                    /*
-                     * ==========================================
-                     * UPDATE STOK
+                     * ======================================================
+                     * NORMALISASI URUTAN ITEM
+                     * ======================================================
                      *
-                     * Purchase = stok bertambah
-                     * ==========================================
+                     * Semua product di-lock dengan urutan ID yang sama.
                      */
-
-                    $currentStock = (float) $product->stock;
-
-                    $product->stock = round(
-                        $currentStock + $qty,
-                        3
-                    );
+                    $items = collect($validated['items'])
+                        ->sortBy('product_id')
+                        ->values()
+                        ->all();
 
                     /*
-                     * Harga beli terakhir
+                     * ======================================================
+                     * GENERATE NOMOR PO
+                     * ======================================================
+                     *
+                     * Sequence berada di dalam transaction.
+                     *
+                     * Jika Purchase gagal:
+                     * sequence ikut rollback.
                      */
-                    $product->purchase_price = $price;
-
-                    $product->save();
-                }
-
-                /*
-                 * ==========================================
-                 * CREATE PURCHASE
-                 * ==========================================
-                 */
-
-                $purchase = Purchase::create([
-                    'invoice_no' => $invoiceNo,
-                    'user_id' => Auth::id(),
-                    'supplier_id' => $validated['supplier_id'],
-                    'grand_total' => round(
-                        $grandTotal,
-                        2
-                    ),
-                ]);
-
-                /*
-                 * ==========================================
-                 * CREATE PURCHASE DETAILS
-                 * ==========================================
-                 */
-
-                $purchase->purchaseDetails()
-                    ->createMany(
-                        $purchaseDetails
+                    $invoiceNo = $transactionNumberService->generate(
+                        'purchase'
                     );
 
-                return $purchase;
-            });
+                    $grandTotal = 0;
+
+                    $purchaseDetails = [];
+
+                    /*
+                     * ======================================================
+                     * LOCK + UPDATE PRODUCT
+                     * ======================================================
+                     */
+                    foreach ($items as $item) {
+                        $product = Product::query()
+                            ->whereKey($item['product_id'])
+                            ->lockForUpdate()
+                            ->first();
+
+                        if (!$product) {
+                            throw new \RuntimeException(
+                                'Produk tidak ditemukan.'
+                            );
+                        }
+
+                        $qty = round(
+                            (float) $item['qty'],
+                            3
+                        );
+
+                        $price = round(
+                            (float) $item['price'],
+                            2
+                        );
+
+                        if ($qty <= 0) {
+                            throw new \RuntimeException(
+                                "Quantity produk {$product->name} harus lebih dari 0."
+                            );
+                        }
+
+                        if ($price < 0) {
+                            throw new \RuntimeException(
+                                "Harga beli produk {$product->name} tidak valid."
+                            );
+                        }
+
+                        $subtotal = round(
+                            $qty * $price,
+                            2
+                        );
+
+                        $grandTotal += $subtotal;
+
+                        $purchaseDetails[] = [
+                            'product_id' => $product->id,
+                            'quantity' => $qty,
+                            'price' => $price,
+                            'subtotal' => $subtotal,
+                        ];
+
+                        /*
+                         * Purchase = stok bertambah.
+                         */
+                        $currentStock = round(
+                            (float) $product->stock,
+                            3
+                        );
+
+                        $product->stock = round(
+                            $currentStock + $qty,
+                            3
+                        );
+
+                        /*
+                         * Simpan harga beli terakhir.
+                         */
+                        $product->purchase_price = $price;
+
+                        $product->save();
+                    }
+
+                    /*
+                     * ======================================================
+                     * CREATE PURCHASE HEADER
+                     * ======================================================
+                     */
+                    $purchase = Purchase::create([
+                        'invoice_no' => $invoiceNo,
+                        'user_id' => Auth::id(),
+                        'supplier_id' => $validated['supplier_id'],
+                        'grand_total' => round(
+                            $grandTotal,
+                            2
+                        ),
+                    ]);
+
+                    /*
+                     * ======================================================
+                     * CREATE PURCHASE DETAILS
+                     * ======================================================
+                     */
+                    $purchase->purchaseDetails()
+                        ->createMany(
+                            $purchaseDetails
+                        );
+
+                    return $purchase;
+                },
+                5
+            );
 
             return redirect()
                 ->route('purchases.index')
@@ -313,9 +311,7 @@ class PurchaseController extends Controller
                     'success',
                     "Pembelian {$purchase->invoice_no} berhasil dicatat. Stok berhasil diperbarui."
                 );
-
         } catch (Throwable $e) {
-
             report($e);
 
             return redirect()
@@ -332,11 +328,8 @@ class PurchaseController extends Controller
     /**
      * Cetak Purchase Order.
      *
-     * Output:
-     * resources/views/purchases/print.blade.php
-     *
      * Format:
-     * A3 Landscape
+     * A5 Landscape
      */
     public function print(Purchase $purchase)
     {
