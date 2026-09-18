@@ -7,9 +7,23 @@ use Illuminate\Database\Eloquent\Model;
 class Sale extends Model
 {
     protected $fillable = [
-        'invoice_no', 'user_id', 'customer_id', 
-        'subtotal', 'discount', 'grand_total', 'payment_method'
+        'invoice_no',
+        'user_id',
+        'customer_id',
+        'subtotal',
+        'discount',
+        'grand_total',
+        'payment_method',
     ];
+
+    protected static function booted(): void
+    {
+        static::deleting(function () {
+            throw new \LogicException(
+                'Sale tidak boleh dihapus karena transaksi sudah memengaruhi stok.'
+            );
+        });
+    }
 
     public function user()
     {

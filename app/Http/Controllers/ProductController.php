@@ -13,9 +13,11 @@ class ProductController extends Controller
     {
         $search = trim((string) $request->input('search', ''));
 
-        // =========================================================
-        // SORTING
-        // =========================================================
+        /*
+        |--------------------------------------------------------------------------
+        | SORTING
+        |--------------------------------------------------------------------------
+        */
 
         $allowedSorts = [
             'id',
@@ -41,9 +43,11 @@ class ProductController extends Controller
             $direction = 'desc';
         }
 
-        // =========================================================
-        // QUERY
-        // =========================================================
+        /*
+        |--------------------------------------------------------------------------
+        | QUERY
+        |--------------------------------------------------------------------------
+        */
 
         $query = Product::with('category')
             ->select('products.*')
@@ -68,9 +72,11 @@ class ProductController extends Controller
                 });
             });
 
-        // =========================================================
-        // SORTING KHUSUS KATEGORI
-        // =========================================================
+        /*
+        |--------------------------------------------------------------------------
+        | SORTING KATEGORI
+        |--------------------------------------------------------------------------
+        */
 
         if ($sort === 'category') {
             $query->orderBy(
@@ -84,9 +90,11 @@ class ProductController extends Controller
             );
         }
 
-        // =========================================================
-        // PAGINATION
-        // =========================================================
+        /*
+        |--------------------------------------------------------------------------
+        | PAGINATION
+        |--------------------------------------------------------------------------
+        */
 
         $products = $query
             ->paginate(10)
@@ -103,6 +111,12 @@ class ProductController extends Controller
         ]);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE
+    |--------------------------------------------------------------------------
+    */
+
     public function create()
     {
         return Inertia::render('Products/Create', [
@@ -110,23 +124,86 @@ class ProductController extends Controller
         ]);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | STORE
+    |--------------------------------------------------------------------------
+    |
+    | Produk baru selalu dibuat dengan stock = 0.
+    |
+    | Jika ingin memasukkan stok awal:
+    | Product → buat produk
+    | Stock Adjustment → masukkan stok fisik awal
+    |
+    */
+
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'barcode' => 'nullable|string|unique:products,barcode',
-            'name' => 'required|string|max:255',
-            'unit' => 'required|string|max:50',
-            'stock' => 'required|numeric|min:0',
-            'purchase_price' => 'required|numeric|min:0',
-            'selling_price' => 'required|numeric|min:0',
+            'category_id' => [
+                'required',
+                'exists:categories,id',
+            ],
+
+            'barcode' => [
+                'nullable',
+                'string',
+                'unique:products,barcode',
+            ],
+
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+            ],
+
+            'unit' => [
+                'required',
+                'string',
+                'max:50',
+            ],
+
+            'purchase_price' => [
+                'required',
+                'numeric',
+                'min:0',
+            ],
+
+            'selling_price' => [
+                'required',
+                'numeric',
+                'min:0',
+            ],
         ]);
 
-        Product::create($validated);
+        Product::create([
+            'category_id' => $validated['category_id'],
+            'barcode' => $validated['barcode'] ?? null,
+            'name' => $validated['name'],
+            'unit' => $validated['unit'],
+
+            /*
+             * Stock selalu dimulai dari 0.
+             */
+            'stock' => 0,
+
+            'purchase_price' => $validated['purchase_price'],
+            'selling_price' => $validated['selling_price'],
+        ]);
 
         return redirect()
-            ->route('products.index');
+            ->route('products.index')
+            ->with(
+                'success',
+                'Produk berhasil ditambahkan. Stok awal dapat dimasukkan melalui Stock Adjustment.'
+            );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | EDIT
+    |--------------------------------------------------------------------------
+    */
 
     public function edit(Product $product)
     {
@@ -136,29 +213,92 @@ class ProductController extends Controller
         ]);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | UPDATE
+    |--------------------------------------------------------------------------
+    |
+    | STOCK SENGAJA TIDAK ADA DI SINI.
+    |
+    */
+
     public function update(Request $request, Product $product)
     {
         $validated = $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'barcode' => 'nullable|string|unique:products,barcode,' . $product->id,
-            'name' => 'required|string|max:255',
-            'unit' => 'required|string|max:50',
-            'stock' => 'required|numeric|min:0',
-            'purchase_price' => 'required|numeric|min:0',
-            'selling_price' => 'required|numeric|min:0',
+            'category_id' => [
+                'required',
+                'exists:categories,id',
+            ],
+
+            'barcode' => [
+                'nullable',
+                'string',
+                'unique:products,barcode,' . $product->id,
+            ],
+
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+            ],
+
+            'unit' => [
+                'required',
+                'string',
+                'max:50',
+            ],
+
+            'purchase_price' => [
+                'required',
+                'numeric',
+                'min:0',
+            ],
+
+            'selling_price' => [
+                'required',
+                'numeric',
+                'min:0',
+            ],
         ]);
 
-        $product->update($validated);
+        /*
+        |--------------------------------------------------------------------------
+        | STOCK TIDAK DISENTUH
+        |--------------------------------------------------------------------------
+        */
+
+        $product->update([
+            'category_id' => $validated['category_id'],
+            'barcode' => $validated['barcode'] ?? null,
+            'name' => $validated['name'],
+            'unit' => $validated['unit'],
+            'purchase_price' => $validated['purchase_price'],
+            'selling_price' => $validated['selling_price'],
+        ]);
 
         return redirect()
-            ->route('products.index');
+            ->route('products.index')
+            ->with(
+                'success',
+                'Produk berhasil diperbarui.'
+            );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | DELETE PRODUCT
+    |--------------------------------------------------------------------------
+    */
 
     public function destroy(Product $product)
     {
         $product->delete();
 
         return redirect()
-            ->route('products.index');
+            ->route('products.index')
+            ->with(
+                'success',
+                'Produk berhasil dihapus.'
+            );
     }
 }
